@@ -1,0 +1,17 @@
+node_modules/
+config.json
+.env
+*.log
+npm-debug.log*
+.DS_Store
+instances.json
+instances.json.tmp
+api-token
+webhooks.json
+webhooks.json.tmp
+certs/
+*.pem
+*.key
+*.pid
+credentials.json
+credentials.json.tmp

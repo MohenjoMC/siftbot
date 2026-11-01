@@ -1,0 +1,51 @@
+{
+  "host": "localhost",
+  "port": 25565,
+  "username": "siftbot",
+  "version": false,
+  "auth": "offline",
+  "password": "",
+  "logLevel": "info",
+  "startupCommands": [],
+  "client": {
+    "enabled": true,
+    "brand": "vanilla",
+    "viewDistance": "normal",
+    "locale": "en_US"
+  },
+  "autoEat": {
+    "enabled": true,
+    "eatAtFood": 17,
+    "eatAtHealth": 14,
+    "cooldownMs": 1500,
+    "restoreHeldItem": true,
+    "exclude": []
+  },
+  "sneak": {
+    "enabled": true,
+    "watchdogMs": 3000
+  },
+  "afk": {
+    "enabled": true,
+    "minIntervalMs": 20000,
+    "maxIntervalMs": 45000,
+    "look": true,
+    "swing": true,
+    "jump": true,
+    "move": false,
+    "chat": [],
+    "chatIntervalMs": 300000
+  },
+  "reconnect": {
+    "enabled": true,
+    "baseDelayMs": 3000,
+    "maxDelayMs": 60000,
+    "onKick": true,
+    "stopOnBan": true,
+    "stopOnVerification": true
+  },
+  "console": {
+    "enabled": true,
+    "chatPassthrough": true
+  }
+}

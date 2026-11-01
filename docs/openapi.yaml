@@ -1,0 +1,700 @@
+openapi: 3.1.0
+info:
+  title: siftbot API
+  version: 1.0.0
+  description: |
+    Authenticated HTTP(S) API for managing siftbot instances. Includes
+    server-sent events and signed outbound webhooks. See docs/API.md for the
+    full narrative documentation.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Default loopback daemon
+  - url: https://127.0.0.1:8787
+    description: TLS-enabled daemon
+security:
+  - bearerAuth: []
+tags:
+  - name: discovery
+  - name: instances
+  - name: streaming
+  - name: webhooks
+
+paths:
+  /healthz:
+    get:
+      tags: [discovery]
+      summary: Public liveness check
+      security: []
+      responses:
+        '200':
+          description: Daemon is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  service: { type: string }
+                  version: { type: string }
+                  time: { type: string, format: date-time }
+
+  /api/v1:
+    get:
+      tags: [discovery]
+      summary: API capabilities and canonical links
+      responses:
+        '200':
+          description: API information
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/instances:
+    get:
+      tags: [instances]
+      summary: List bot instances
+      responses:
+        '200':
+          description: Instance summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instances]
+                properties:
+                  instances:
+                    type: array
+                    items: { $ref: '#/components/schemas/InstanceSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [instances]
+      summary: Create a bot instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config]
+              properties:
+                label: { type: string, maxLength: 48 }
+                config: { $ref: '#/components/schemas/Config' }
+      responses:
+        '201':
+          description: Instance created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/instances/{id}:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    get:
+      tags: [instances]
+      summary: Get one instance
+      parameters:
+        - name: reveal
+          in: query
+          description: Include the real password and unredacted startup commands
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Instance detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [instances]
+      summary: Partially update an instance
+      description: Deep-merges config. The bot must be stopped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                config: { $ref: '#/components/schemas/Config' }
+      responses:
+        '200':
+          description: Updated instance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [instances]
+      summary: Stop and delete an instance
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      tags: [instances]
+      summary: Start an instance
+      responses:
+        '202':
+          description: Start accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      tags: [instances]
+      summary: Stop an instance
+      responses:
+        '200':
+          description: Instance stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/restart:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      tags: [instances]
+      summary: Restart an instance
+      responses:
+        '202':
+          description: Restart accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/reconnect:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      tags: [instances]
+      summary: Reconnect or start an instance
+      responses:
+        '202':
+          description: Reconnect accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance: { $ref: '#/components/schemas/InstanceSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/input:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    post:
+      tags: [instances]
+      summary: Send one console line to a bot
+      description: Plain text is chat, /cmd is a server command, .cmd is a siftbot command.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [line]
+              properties:
+                line:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                  description: Must not contain newlines.
+      responses:
+        '202':
+          description: Input accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/instances/{id}/logs:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    get:
+      tags: [instances]
+      summary: Read buffered console records
+      parameters:
+        - name: since
+          in: query
+          description: Return records with seq greater than this value
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 800, default: 100 }
+      responses:
+        '200':
+          description: Console records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instanceId: { type: string }
+                  records:
+                    type: array
+                    items: { $ref: '#/components/schemas/Record' }
+                  lastSeq: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [instances]
+      summary: Clear the console buffer
+      responses:
+        '204': { description: Cleared }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/instances/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/InstanceId'
+    get:
+      tags: [streaming]
+      summary: Server-sent events for one instance
+      description: |
+        Snapshot, cursor, then live events. Resume with Last-Event-ID or ?after.
+        ?token= is accepted here for header-less SSE clients.
+      parameters:
+        - name: after
+          in: query
+          description: Replay events after this global event id
+          schema: { type: integer, minimum: 0 }
+        - name: token
+          in: query
+          description: API token for clients that cannot set headers
+          schema: { type: string }
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/events:
+    get:
+      tags: [streaming]
+      summary: Server-sent events for every instance
+      parameters:
+        - name: after
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: token
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/webhooks:
+    get:
+      tags: [webhooks]
+      summary: List webhook subscriptions
+      responses:
+        '200':
+          description: Webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items: { $ref: '#/components/schemas/Webhook' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [webhooks]
+      summary: Create a webhook subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookCreate' }
+      responses:
+        '201':
+          description: Webhook created. The secret is returned once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook: { $ref: '#/components/schemas/WebhookWithSecret' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/webhooks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+    get:
+      tags: [webhooks]
+      summary: Get one webhook
+      responses:
+        '200':
+          description: Webhook
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook: { $ref: '#/components/schemas/Webhook' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [webhooks]
+      summary: Update a webhook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string, format: uri }
+                description: { type: string, maxLength: 160 }
+                events:
+                  type: array
+                  items: { type: string }
+                instanceId: { type: [string, 'null'] }
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Updated webhook
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook: { $ref: '#/components/schemas/Webhook' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [webhooks]
+      summary: Delete a webhook
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/webhooks/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+    post:
+      tags: [webhooks]
+      summary: Send a test delivery
+      responses:
+        '200':
+          description: Delivery attempt result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { $ref: '#/components/schemas/WebhookTestResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: At least 16 characters. X-Siftbot-Token is also accepted.
+
+  parameters:
+    InstanceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    WebhookId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Unknown resource
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Conflict, such as editing a running bot
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+
+    Config:
+      type: object
+      additionalProperties: true
+      description: See config.example.json for the complete schema.
+      properties:
+        host: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        username: { type: string }
+        version:
+          oneOf:
+            - type: string
+            - type: boolean
+        auth:
+          type: string
+          enum: [offline, microsoft]
+        password: { type: string }
+        logLevel:
+          type: string
+          enum: [debug, info, warn, error]
+        startupCommands:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: object
+                properties:
+                  command: { type: string }
+                  delayMs: { type: integer }
+        client:
+          type: object
+          additionalProperties: true
+        autoEat:
+          type: object
+          additionalProperties: true
+        sneak:
+          type: object
+          additionalProperties: true
+        afk:
+          type: object
+          additionalProperties: true
+        reconnect:
+          type: object
+          additionalProperties: true
+        console:
+          type: object
+          additionalProperties: true
+
+    InstanceSummary:
+      type: object
+      required: [id, label, status, connection, features]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        status:
+          type: string
+          enum: [offline, connecting, online, retrying, stopping, error]
+        fatal: { type: [string, 'null'] }
+        startedAt: { type: [string, 'null'], format: date-time }
+        connection:
+          type: object
+          properties:
+            username: { type: string }
+            host: { type: string }
+            port: { type: integer }
+            auth: { type: string }
+            version: { type: string }
+        features:
+          type: object
+          properties:
+            autoEat: { type: boolean }
+            sneak: { type: boolean }
+            afk: { type: boolean }
+            client: { type: boolean }
+        hasPassword: { type: boolean }
+        lastRecordSeq: { type: integer }
+
+    InstanceDetail:
+      allOf:
+        - $ref: '#/components/schemas/InstanceSummary'
+        - type: object
+          properties:
+            config: { $ref: '#/components/schemas/Config' }
+            details: { $ref: '#/components/schemas/Details' }
+
+    Details:
+      type: object
+      additionalProperties: true
+      properties:
+        connected: { type: boolean }
+        username: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        version: { type: string }
+        gameMode: { type: [string, 'null'] }
+        dimension: { type: [string, 'null'] }
+        health: { type: [number, 'null'] }
+        food: { type: [number, 'null'] }
+        saturation: { type: [number, 'null'] }
+        position:
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                x: { type: number }
+                y: { type: number }
+                z: { type: number }
+        ping: { type: [integer, 'null'] }
+        players: { type: integer }
+        heldItem: { type: [string, 'null'] }
+        clientBrand: { type: [string, 'null'] }
+        clientTickEnd: { type: [boolean, 'null'] }
+        hasStoredPassword: { type: boolean }
+        sneak: { type: boolean }
+        autoEatEnabled: { type: boolean }
+        afkEnabled: { type: boolean }
+        nextAfkMs: { type: [integer, 'null'] }
+        eating: { type: boolean }
+        lastEaten: { type: [string, 'null'] }
+        uptimeMs: { type: integer }
+        reconnectInMs: { type: [integer, 'null'] }
+        reconnectAttempt: { type: integer }
+
+    Record:
+      type: object
+      required: [time, level, kind, text, seq]
+      properties:
+        time: { type: integer, description: Unix milliseconds }
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        kind:
+          type: string
+          enum: [log, chat, whisper, system, output]
+        text: { type: string }
+        seq: { type: integer, description: Per-instance console cursor }
+
+    Webhook:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+        description: { type: string }
+        events:
+          type: array
+          items: { type: string }
+        instanceId: { type: [string, 'null'] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        hasSecret: { type: boolean }
+        lastDeliveryAt: { type: [string, 'null'], format: date-time }
+        lastStatus: { type: [integer, 'null'] }
+        lastError: { type: [string, 'null'] }
+        failureCount: { type: integer }
+
+    WebhookWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/Webhook'
+        - type: object
+          properties:
+            secret: { type: string }
+
+    WebhookCreate:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        description: { type: string, maxLength: 160 }
+        events:
+          type: array
+          items: { type: string }
+          default: ['*']
+        instanceId: { type: [string, 'null'] }
+        active: { type: boolean, default: true }
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 128
+          description: Optional; generated when omitted. Returned once.
+
+    WebhookTestResult:
+      type: object
+      properties:
+        delivered: { type: boolean }
+        status: { type: [integer, 'null'] }
+        error: { type: [string, 'null'] }
+        deliveryId: { type: string }
+
+    WebhookPayload:
+      type: object
+      properties:
+        id: { type: string, description: Delivery UUID }
+        type: { type: string }
+        sequence: { type: integer }
+        createdAt: { type: string, format: date-time }
+        instanceId: { type: [string, 'null'] }
+        data: { type: object, additionalProperties: true }

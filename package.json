@@ -1,0 +1,42 @@
+{
+  "name": "siftbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minecraft AFK bots on mineflayer with auto-eat, held sneak, reconnects and an OpenTUI multi-bot control room.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "siftbot": "src/index.js"
+  },
+  "engines": {
+    "node": ">=20.11",
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test",
+    "ui": "bun src/tui.tsx",
+    "test:tui": "bun test test/tui.test.tsx",
+    "test:all": "node --test && bun test test/tui.test.tsx",
+    "api": "node src/daemon.js",
+    "api:dev": "node --watch src/daemon.js",
+    "cert": "bash scripts/gen-local-cert.sh"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "afk",
+    "bot",
+    "autoeat",
+    "opentui",
+    "tui"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@opentui/core": "0.8.0",
+    "@opentui/react": "0.8.0",
+    "mineflayer": "^4.39.0",
+    "react": "19.2.0"
+  }
+}
