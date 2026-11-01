@@ -1,5 +1,3 @@
-<img src="assets/logo.png" width="420" alt="siftbot">
-
 # siftbot
 
 An AFK Minecraft bot built on [mineflayer](https://github.com/PrismarineJS/mineflayer), with auto-eat, a held sneak key, anti-AFK activity, a live console, and an [OpenTUI](https://opentui.com) control room for running many bots at once.
