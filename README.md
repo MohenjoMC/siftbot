@@ -7,6 +7,7 @@ An AFK Minecraft bot built on [mineflayer](https://github.com/PrismarineJS/minef
 - **Held shift** keeps sneak pressed for the whole session, re-applies it on respawn, and has a watchdog for anything that resets client input.
 - **AFK activity** looks around, swings, and jumps on a randomized timer. Optional small steps and chat lines are available.
 - **Vanilla client presentation** announces the bot the way the official client does — a vanilla brand in the configuration phase, identical settings packets in both phases, answers to every known-packs negotiation, and `client_tick_end` every physics tick on 1.21.2+, which strict anticheats and 26.x servers expect.
+- **Passes Sonar verification** — the popular anti-bot plugin's default checks (vanilla physics, protocol probes, boat/minecart packets, proxy transfer) are matched client-side, so the bot gets through on servers where automation is allowed.
 - **Live console** shows chat, whispers, system messages, and lets you type commands or chat in real time.
 - **Automatic reconnect** with exponential backoff, plus optional startup commands for `/login` or `/register`.
 - **Password manager** — saved passwords (JSON, mode 0600, hand-editable) are remembered from `/register` or `/login` commands the bot sends, and the bot answers the server's login prompt automatically on every reconnect.
@@ -289,6 +290,19 @@ Passwords are redacted in logs, `--print-config`, and API responses.
 ### Microsoft accounts
 
 Set `"auth": "microsoft"` and choose any username; the account comes from the device-code flow. On first run the bot prints a URL and code — open the URL and approve it. The token is cached by minecraft-protocol for later runs.
+
+## Anti-bot compatibility (Sonar)
+
+siftbot speaks the vanilla client's full handshake and session cadence, which is enough to pass the standard verification used by [Sonar](https://github.com/jonesdevelopment/sonar) — the anti-bot plugin found on many public servers. Tested against **Sonar 2.1.53** on Paper 26.1.2 with its default configuration:
+
+- configuration-phase brand (`minecraft:brand`) and vanilla Client Information, sent once and identically in both phases;
+- gravity and collision checks: the exact vanilla fall curve and landing height on the invisible platform;
+- protocol probes: invalid held-item slot ignored, valid slot echoed, transaction accepted, swing-arm echoed (on <26.3);
+- the falling boat and minecart packet cadence (`vehicle_move`, `steer_boat`, rotation) the vehicle check expects;
+- `transfer` packet handling when a proxy moves the client to the backend, and automatic reconnect;
+- `client_tick_end` on 1.21.2+, so per-tick packet accounting matches.
+
+This is client-fidelity work, not a captcha solver: Sonar's map/challenge captchas and any deliberate human verification still apply, and its checks can change between releases or server configs. Use siftbot only on servers where automation is permitted (see the AFK policy note at the end).
 
 ## Live console
 
