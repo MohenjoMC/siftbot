@@ -371,6 +371,7 @@ export function App ({ manager, dataFile }) {
   const [focusConsole, setFocusConsole] = useState(false)
   const [modal, setModal] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuSnapshot, setMenuSnapshot] = useState(null)
   const [slotIndex, setSlotIndex] = useState(0)
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
@@ -382,7 +383,8 @@ export function App ({ manager, dataFile }) {
   const selectedStatus = selected ? manager.statusOf(selected) : 'offline'
   const windowData = selected ? describeWindow(selected.runtime?.bot?.currentWindow) : null
   const windowId = windowData?.id ?? null
-  const menuRows = windowData ? Math.ceil(windowData.size / 9) : 0
+  const activeWindow = windowData ?? menuSnapshot
+  const menuRows = activeWindow ? Math.ceil(activeWindow.size / 9) : 0
 
   const notify = message => {
     setToast(message)
@@ -427,10 +429,8 @@ export function App ({ manager, dataFile }) {
   // An in-game menu (chest, shop, RTP, ...) opens as a popup, with the first
   // non-empty slot selected so Enter is immediately useful.
   useEffect(() => {
-    if (!windowData) {
-      setMenuOpen(false)
-      return
-    }
+    if (!windowData) return
+    setMenuSnapshot(windowData)
     setFocusConsole(false)
     setMenuOpen(true)
     const first = windowData.slots.findIndex(Boolean)
@@ -482,10 +482,11 @@ export function App ({ manager, dataFile }) {
     const bot = selected?.runtime?.bot
     if (bot?.currentWindow) run(() => bot.closeWindow(bot.currentWindow))
     setMenuOpen(false)
+    setMenuSnapshot(null)
   }
 
   const handleMenuKey = key => {
-    const last = (windowData?.size ?? 1) - 1
+    const last = (activeWindow?.size ?? 1) - 1
     switch (key.name) {
       case 'escape':
         closeMenuWindow()
@@ -589,7 +590,7 @@ export function App ({ manager, dataFile }) {
     if (modal) return
     if (key.eventType === 'release') return
 
-    if (menuOpen && windowData) {
+    if (menuOpen && activeWindow) {
       handleMenuKey(key)
       return
     }
@@ -625,7 +626,7 @@ export function App ({ manager, dataFile }) {
         if (selected?.runtime?.bot) run(() => selected.runtime.bot.activateItem())
         break
       case 'g':
-        if (windowData) setMenuOpen(true)
+        if (activeWindow) setMenuOpen(true)
         else notify('No in-game menu is open')
         break
       case 'a':
@@ -817,21 +818,25 @@ export function App ({ manager, dataFile }) {
         </box>
       </box>
 
-      {menuOpen && windowData && (
+      {menuOpen && activeWindow && (
         <box
           position="absolute"
           top={2}
           left={2}
           zIndex={10}
-          width={Math.min(Math.max(width - 4, 80), 172)}
-          height={Math.min(menuRows * 2 + 4, 42)}
+          width={Math.min(Math.max(width - 4, 70), 74)}
+          height={Math.min(menuRows * 3 + 5, 42)}
           flexDirection="column"
-          borderStyle="rounded"
+          borderStyle="double"
           borderColor={COLORS.cyan}
-          backgroundColor={COLORS.panel}
-          title={` ${windowData.title.slice(0, 38)} `}
+          backgroundColor={COLORS.header}
+          title={` ${activeWindow.title.slice(0, 40)} `}
         >
-          <MenuGrid data={windowData} index={slotIndex} />
+          <MenuGrid data={activeWindow} index={slotIndex} />
+          <box height={1} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
+            <text fg={COLORS.white}>{slotLabel(activeWindow, slotIndex)}</text>
+            <text fg={windowData ? COLORS.green : COLORS.faint}>{windowData ? 'live' : 'closed'}</text>
+          </box>
           <box height={1} paddingLeft={1}>
             <text fg={COLORS.faint}>←↑↓→ move · Enter click · Esc close · g hide</text>
           </box>
@@ -849,9 +854,47 @@ export function App ({ manager, dataFile }) {
   )
 }
 
-function trimLabel (label, max) {
-  const clean = String(label ?? '').replace(/\s+/g, ' ').trim()
-  return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
+const ITEM_ICONS = {
+  compass: '🧭',
+  clock: '🕐',
+  knowledge_book: '📖',
+  writable_book: '📕',
+  written_book: '📗',
+  ender_pearl: '🔮',
+  ender_chest: '🧰',
+  emerald: '💚',
+  diamond: '💎',
+  amethyst_shard: '🔷',
+  amethyst_cluster: '🔶',
+  gold_ingot: '🟨',
+  iron_ingot: '⬜',
+  potion: '🧪',
+  sunflower: '🌻',
+  painting: '🖼',
+  netherite_helmet: '⛑',
+  player_head: '🗿',
+  diamond_sword: '⚔',
+  light_blue_dye: '🎨',
+  paper: '📜',
+  map: '🗺',
+  arrow: '➶'
+}
+
+function itemIcon (name) {
+  if (ITEM_ICONS[name]) return ITEM_ICONS[name]
+  if (/_pane$|_glass/.test(name)) return '▦'
+  if (/_log$|_planks$|_wood$|_stem$/.test(name)) return '🪵'
+  if (/_sword$|_axe$|_pickaxe$|_shovel$|_hoe$/.test(name)) return '⛏'
+  if (/_helmet$|_chestplate$|_leggings$|_boots$/.test(name)) return '🛡'
+  if (/_seeds$|_sapling$|_flower$|tulip|daisy|orchid|poppy/.test(name)) return '🌱'
+  if (/_shard$|_cluster$/.test(name)) return '🔷'
+  return '❖'
+}
+
+function slotLabel (data, index) {
+  const item = data?.slots?.[index]
+  if (!item) return 'empty slot'
+  return `${item.label}${item.count > 1 ? ` ×${item.count}` : ''}`
 }
 
 function MenuGrid ({ data, index }) {
@@ -866,21 +909,24 @@ function MenuGrid ({ data, index }) {
       cells.push(
         <box
           key={slot}
-          width={18}
-          height={2}
+          width={7}
+          height={3}
           flexDirection="column"
-          backgroundColor={active ? COLORS.selected : undefined}
+          alignItems="center"
+          justifyContent="center"
+          borderStyle="single"
+          borderColor={active ? COLORS.cyan : COLORS.border}
+          backgroundColor={active ? COLORS.selected : COLORS.panel}
         >
-          <text fg={active ? COLORS.white : item ? COLORS.text : COLORS.faint}>
-            {item ? trimLabel(item.label, 16) : '·'}
+          <text fg={active ? COLORS.white : COLORS.text}>
+            {item ? itemIcon(item.name) : ' '}
           </text>
-          <text fg={COLORS.faint}>{item && item.count > 1 ? `x${item.count}` : ' '}</text>
         </box>
       )
     }
     rows.push(<box key={row} flexDirection="row">{cells}</box>)
   }
-  return <box flexDirection="column">{rows}</box>
+  return <box flexDirection="column" paddingLeft={1} paddingRight={1}>{rows}</box>
 }
 
 function Header ({ manager, dataFile }) {

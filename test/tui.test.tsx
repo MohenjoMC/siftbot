@@ -211,6 +211,16 @@ test('renders an in-game menu as a popup and clicks a slot', async () => {
     await act(async () => { setup.mockInput.pressEnter() })
     await setup.renderOnce()
     expect(clicks).toEqual([1])
+
+    // The window closing (e.g. /rtp fired) keeps the last menu visible.
+    instance.runtime.bot.currentWindow = null
+    await act(async () => {
+      manager.emit('change')
+      await new Promise(resolve => setTimeout(resolve, 80))
+    })
+    const closed = await setup.waitForFrame(current => current.includes('closed'))
+    expect(closed).toContain('Random Teleport')
+    expect(closed).toContain('closed')
   } finally {
     await setup.dispose()
     fs.rmSync(dir, { recursive: true, force: true })
