@@ -27,10 +27,11 @@ function cleanLabel (label, config) {
  * The TUI is a thin view over this manager.
  */
 export class InstanceManager extends EventEmitter {
-  constructor ({ file, credentialsFile = null }) {
+  constructor ({ file, credentialsFile = null, plugins = null }) {
     super()
     this.file = file
     this.instances = new Map()
+    this.plugins = plugins
     this.credentials = new CredentialStore(
       credentialsFile ?? path.join(path.dirname(file), 'credentials.json')
     )
@@ -198,10 +199,13 @@ export class InstanceManager extends EventEmitter {
     instance.runtime = runtime
     instance.commands = commands
 
+    this.plugins?.attachSession({ id, runtime, commands, logger })
+
     runtime.on('spawn', () => this.emit('change'))
     runtime.on('disconnect', () => this.emit('change'))
     runtime.on('fatal', message => {
       instance.fatal = message
+      this.plugins?.detachSession(id)
       instance.runtime = null
       instance.commands = null
       instance.startedAt = null
@@ -232,6 +236,7 @@ export class InstanceManager extends EventEmitter {
       } catch {
         // Shutdown errors should not block the UI.
       } finally {
+        this.plugins?.detachSession(id)
         instance.runtime = null
         instance.commands = null
         instance.stopping = false

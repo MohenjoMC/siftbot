@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
+import path from 'node:path'
 import process from 'node:process'
 import { ConfigError, USAGE, loadConfig, redactConfig } from './config.js'
 import { CredentialStore } from './credentials.js'
+import { PluginManager } from './plugins/manager.js'
 import { Logger } from './logger.js'
 import { SiftBot } from './bot.js'
 import { LiveConsole } from './console.js'
@@ -46,6 +48,7 @@ async function main () {
     `sneak ${config.sneak.enabled ? 'held' : 'off'} · ` +
     `afk ${config.afk.enabled ? 'on' : 'off'} · ` +
     `client ${config.client.enabled ? 'on' : 'off'} · ` +
+    `plugins ${config.plugins.enabled ? 'on' : 'off'} · ` +
     `console ${config.console.enabled ? 'on' : 'off'}`
   )
 
@@ -64,6 +67,7 @@ async function main () {
     } catch (err) {
       logger.error(`shutdown: ${err.message}`)
     }
+    plugins?.stop()
     live.stop()
     process.exitCode = code
     setTimeout(() => process.exit(code), 100)
@@ -75,6 +79,18 @@ async function main () {
     logger,
     onQuit: () => shutdown(0)
   })
+
+  const plugins = config.plugins.enabled
+    ? new PluginManager({
+        dir: path.resolve(config.plugins.dir),
+        logger,
+        hotReload: config.plugins.hotReload
+      })
+    : null
+  if (plugins) {
+    await plugins.start()
+    plugins.attachSession({ id: 'cli', runtime, commands: live.service, logger })
+  }
 
   runtime.on('fatal', message => {
     logger.error(`stopping: ${message}`)

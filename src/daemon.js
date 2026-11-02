@@ -5,6 +5,7 @@ import process from 'node:process'
 import { randomBytes } from 'node:crypto'
 import { Logger } from './logger.js'
 import { InstanceManager } from './instances.js'
+import { PluginManager } from './plugins/manager.js'
 import { EventHub } from './api/events.js'
 import { WebhookService } from './api/webhooks.js'
 import { ApiServer } from './api/server.js'
@@ -24,6 +25,7 @@ Options:
       --token <token>            API bearer token (min 16 chars)
       --instances <file>         Instance file                 (default: ./instances.json)
       --credentials <file>       Password store                (default: next to instances)
+      --plugins <dir>            Plugin directory              (default: next to instances)
       --webhooks <file>          Webhook store                 (default: ./webhooks.json)
       --tls-cert <file>          PEM certificate for HTTPS
       --tls-key <file>           PEM private key for HTTPS
@@ -36,7 +38,8 @@ Options:
 
 Environment:
   SIFT_API_HOST, SIFT_API_PORT, SIFT_API_TOKEN, SIFT_API_INSTANCES,
-  SIFT_API_CREDENTIALS, SIFT_API_WEBHOOKS, SIFT_API_TLS_CERT, SIFT_API_TLS_KEY,
+  SIFT_API_CREDENTIALS, SIFT_API_PLUGINS, SIFT_API_WEBHOOKS,
+  SIFT_API_TLS_CERT, SIFT_API_TLS_KEY,
   SIFT_API_INSECURE_WEBHOOKS, SIFT_API_START_ALL, SIFT_API_LOG_LEVEL
 
 Without --token / SIFT_API_TOKEN a token is generated at api-token next to
@@ -57,7 +60,7 @@ function parseArgs (argv) {
     const name = (eq === -1 ? token.slice(2) : token.slice(2, eq)).toLowerCase()
     const booleanFlags = new Set(['insecure-webhooks', 'start-all', 'show-token'])
     const valueFlags = new Set([
-      'host', 'port', 'token', 'instances', 'credentials', 'webhooks',
+      'host', 'port', 'token', 'instances', 'credentials', 'plugins', 'webhooks',
       'tls-cert', 'tls-key', 'log-level'
     ])
     if (!booleanFlags.has(name) && !valueFlags.has(name)) {
@@ -136,6 +139,9 @@ async function main () {
   const credentialsFile = flags.credentials ?? process.env.SIFT_API_CREDENTIALS
     ? path.resolve(flags.credentials ?? process.env.SIFT_API_CREDENTIALS)
     : path.join(path.dirname(instancesFile), 'credentials.json')
+  const pluginsDir = path.resolve(
+    flags.plugins ?? process.env.SIFT_API_PLUGINS ?? path.join(path.dirname(instancesFile), 'plugins')
+  )
   const host = flags.host ?? process.env.SIFT_API_HOST ?? '127.0.0.1'
   const port = Number(flags.port ?? process.env.SIFT_API_PORT ?? 8787)
   const logLevel = flags['log-level'] ?? process.env.SIFT_API_LOG_LEVEL ?? 'info'
@@ -179,7 +185,10 @@ async function main () {
     }
   }
 
-  const manager = new InstanceManager({ file: instancesFile, credentialsFile })
+  const plugins = new PluginManager({ dir: pluginsDir, logger })
+  await plugins.start()
+
+  const manager = new InstanceManager({ file: instancesFile, credentialsFile, plugins })
   try {
     manager.load()
   } catch (err) {
@@ -244,6 +253,7 @@ async function main () {
     } finally {
       webhooks.stop()
       hub.stop()
+      plugins.stop()
       setTimeout(() => process.exit(code), 50)
     }
   }
@@ -272,6 +282,7 @@ async function main () {
   logger.info(`siftbot api listening on ${server.url}`)
   logger.info(`instances: ${instancesFile}`)
   logger.info(`credentials: ${credentialsFile} (${manager.credentials.summary().length} saved)`)
+  logger.info(`plugins: ${pluginsDir} (${plugins.list().length} loaded)`)
   logger.info(`webhooks:  ${webhooksFile} (${webhooks.list().length})`)
   if (resolved.source === '--token' || resolved.source === 'SIFT_API_TOKEN') {
     logger.info(`token:     ${resolved.source}`)

@@ -127,6 +127,7 @@ export class SiftBot extends EventEmitter {
     this.bot = bot
     this.session = session
     this.connecting = false
+    this.emit('session', bot)
 
     session.identity = new ClientIdentity(bot, config.client, logger)
     session.auth = new AutoLogin(bot, config, logger, { credentials: this.credentials })

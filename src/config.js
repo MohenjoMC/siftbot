@@ -24,6 +24,11 @@ export function defaultConfig () {
       viewDistance: 'normal',
       locale: 'en_US'
     },
+    plugins: {
+      enabled: true,
+      dir: 'plugins',
+      hotReload: true
+    },
     autoEat: {
       enabled: true,
       eatAtFood: 17,
@@ -81,6 +86,8 @@ Options:
       --no-sneak             Disable holding sneak
       --no-afk               Disable anti-AFK activity
       --no-client            Disable vanilla client presentation
+      --plugins-dir <dir>    Plugin directory                (default: plugins)
+      --no-plugins           Disable user plugins
       --no-console           Disable the interactive console
       --no-reconnect         Do not reconnect after disconnects
       --no-chat-passthrough  Treat plain console lines as commands, not chat
@@ -91,7 +98,7 @@ Options:
 Environment variables (lowest to highest precedence: file, env, CLI):
   SIFTBOT_CONFIG, SIFTBOT_HOST, SIFTBOT_PORT, SIFTBOT_USERNAME,
   SIFTBOT_MC_VERSION, SIFTBOT_AUTH, SIFTBOT_PASSWORD, SIFTBOT_LOG_LEVEL,
-  SIFTBOT_AUTOEAT, SIFTBOT_SNEAK, SIFTBOT_AFK, SIFTBOT_CLIENT, SIFTBOT_CONSOLE, SIFTBOT_RECONNECT
+  SIFTBOT_AUTOEAT, SIFTBOT_SNEAK, SIFTBOT_AFK, SIFTBOT_CLIENT, SIFTBOT_PLUGINS, SIFTBOT_CONSOLE, SIFTBOT_RECONNECT
 `
 
 const VALUE_FLAGS = new Set([
@@ -102,7 +109,8 @@ const VALUE_FLAGS = new Set([
   'mc-version',
   'auth',
   'password',
-  'log-level'
+  'log-level',
+  'plugins-dir'
 ])
 
 const BOOLEAN_FLAGS = new Set([
@@ -110,6 +118,7 @@ const BOOLEAN_FLAGS = new Set([
   'autoeat',
   'sneak',
   'client',
+  'plugins',
   'console',
   'reconnect',
   'chat-passthrough',
@@ -117,6 +126,7 @@ const BOOLEAN_FLAGS = new Set([
   'no-autoeat',
   'no-sneak',
   'no-client',
+  'no-plugins',
   'no-console',
   'no-reconnect',
   'no-chat-passthrough',
@@ -208,6 +218,7 @@ function fromEnv (env) {
     SIFTBOT_SNEAK: 'sneak',
     SIFTBOT_AFK: 'afk',
     SIFTBOT_CLIENT: 'client',
+    SIFTBOT_PLUGINS: 'plugins',
     SIFTBOT_CONSOLE: 'console',
     SIFTBOT_RECONNECT: 'reconnect'
   }
@@ -231,12 +242,16 @@ function fromFlags (flags) {
       ? false
       : String(flags['mc-version'])
   }
+  if (flags['plugins-dir'] !== undefined) {
+    out.plugins = { ...(out.plugins || {}), dir: flags['plugins-dir'] }
+  }
 
   const toggles = {
     afk: 'afk',
     autoeat: 'autoEat',
     sneak: 'sneak',
     client: 'client',
+    plugins: 'plugins',
     console: 'console',
     reconnect: 'reconnect'
   }
@@ -316,7 +331,7 @@ export function normalizeConfig (input) {
   if (!isPlainObject(input)) throw new ConfigError('Config must be a JSON object')
   const config = deepMerge(defaultConfig(), input)
 
-  for (const section of ['autoEat', 'sneak', 'afk', 'reconnect', 'console', 'client']) {
+  for (const section of ['autoEat', 'sneak', 'afk', 'reconnect', 'console', 'client', 'plugins']) {
     if (!isPlainObject(config[section])) {
       throw new ConfigError(`${section} must be an object`)
     }
@@ -390,6 +405,12 @@ export function normalizeConfig (input) {
   if (!/^[A-Za-z0-9_-]{2,16}$/.test(client.locale)) {
     throw new ConfigError('client.locale must be 2-16 characters (letters, numbers, _ or -)')
   }
+
+  const plugins = config.plugins
+  plugins.enabled = parseBool(plugins.enabled, 'plugins.enabled')
+  plugins.hotReload = parseBool(plugins.hotReload, 'plugins.hotReload')
+  plugins.dir = String(plugins.dir ?? 'plugins').trim()
+  if (plugins.dir === '') throw new ConfigError('plugins.dir must be a directory path')
 
   const autoEat = config.autoEat
   autoEat.enabled = parseBool(autoEat.enabled, 'autoEat.enabled')

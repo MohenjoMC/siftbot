@@ -13,6 +13,11 @@
     "viewDistance": "normal",
     "locale": "en_US"
   },
+  "plugins": {
+    "enabled": true,
+    "dir": "plugins",
+    "hotReload": true
+  },
   "autoEat": {
     "enabled": true,
     "eatAtFood": 17,

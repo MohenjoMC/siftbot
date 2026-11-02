@@ -80,6 +80,24 @@ export class BotCommands {
     this.commandList.push(command)
   }
 
+  /** Register a command owned by a plugin. Fails on a built-in collision. */
+  registerExternal (name, { usage, description, run, aliases = [] }) {
+    const clean = String(name).replace(/^\./, '').toLowerCase()
+    if (this.commands.has(clean)) throw new Error(`Command .${clean} already exists`)
+    this.register(clean, { usage, description, run, aliases })
+  }
+
+  /** Remove a command (and its aliases) by name. */
+  unregisterCommand (name) {
+    const command = this.commands.get(name)
+    if (!command) return
+    for (const [key, value] of this.commands) {
+      if (value === command) this.commands.delete(key)
+    }
+    const index = this.commandList.indexOf(command)
+    if (index >= 0) this.commandList.splice(index, 1)
+  }
+
   registerCommands () {
     this.register('help', {
       usage: '.help [command]',

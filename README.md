@@ -8,6 +8,7 @@ An AFK Minecraft bot built on [mineflayer](https://github.com/PrismarineJS/minef
 - **AFK activity** looks around, swings, and jumps on a randomized timer. Optional small steps and chat lines are available.
 - **Vanilla client presentation** announces the bot the way the official client does — a vanilla brand in the configuration phase, identical settings packets in both phases, answers to every known-packs negotiation, and `client_tick_end` every physics tick on 1.21.2+, which strict anticheats and 26.x servers expect.
 - **Passes Sonar verification** — the popular anti-bot plugin's default checks (vanilla physics, protocol probes, boat/minecart packets, proxy transfer) are matched client-side, so the bot gets through on servers where automation is allowed.
+- **Plugins with hot reload** — drop an ES module into `plugins/` and give every bot new behaviour: move, look, equip, read chests, add console commands, react to chat and events. Save the file and running bots rebind without a restart.
 - **Live console** shows chat, whispers, system messages, and lets you type commands or chat in real time.
 - **Automatic reconnect** with exponential backoff, plus optional startup commands for `/login` or `/register`.
 - **Password manager** — saved passwords (JSON, mode 0600, hand-editable) are remembered from `/register` or `/login` commands the bot sends, and the bot answers the server's login prompt automatically on every reconnect.
@@ -117,6 +118,11 @@ The token is full admin. Keep the daemon on loopback, use TLS if it leaves the m
     "brand": "vanilla",
     "viewDistance": "normal",
     "locale": "en_US"
+  },
+  "plugins": {
+    "enabled": true,
+    "dir": "plugins",
+    "hotReload": true
   },
   "autoEat": {
     "enabled": true,
@@ -291,6 +297,40 @@ Passwords are redacted in logs, `--print-config`, and API responses.
 
 Set `"auth": "microsoft"` and choose any username; the account comes from the device-code flow. On first run the bot prints a URL and code — open the URL and approve it. The token is cached by minecraft-protocol for later runs.
 
+## Plugins
+
+Every bot can be extended with a small ES module in `plugins/`:
+
+```js
+export default function create (ctx) {
+  ctx.on('spawn', () => ctx.log(`spawned on ${ctx.config.host}`))
+
+  ctx.registerCommand('chest', {
+    usage: '.chest [radius]',
+    description: 'Read the nearest chest',
+    run: async (args, c) => {
+      const found = await c.containers.nearest(Number(args[0]) || 16)
+      for (const item of found?.items ?? []) c.log(`${item.name} x${item.count}`)
+    }
+  })
+
+  ctx.actions.move('forward', 500)   // drive the player
+}
+```
+
+A plugin gets the bot, its config, movement/look/jump/equip/drop actions,
+inventory and container reads, event/timer helpers with automatic cleanup, and
+console command registration. `create(ctx)` runs once per connected bot, so
+multi-bot and reconnects bind cleanly.
+
+**Hot reload:** the plugin directory is watched — save the file and every active
+bot rebinds to the new code. If a save has a syntax error, the last working
+version keeps running and the error is logged.
+
+Full API and lifecycle: **[docs/PLUGINS.md](docs/PLUGINS.md)**. The shipped
+`plugins/example.js` adds `.where`, `.chest` and `.walk`. Plugins are trusted
+code executed in-process: only install ones you have read.
+
 ## Anti-bot compatibility (Sonar)
 
 siftbot speaks the vanilla client's full handshake and session cadence, which is enough to pass the standard verification used by [Sonar](https://github.com/jonesdevelopment/sonar) — the anti-bot plugin found on many public servers. Tested against **Sonar 2.1.53** on Paper 26.1.2 with its default configuration:
@@ -354,7 +394,7 @@ node src/index.js \
 
 `--print-config` prints the fully resolved config with secrets redacted. Shortcuts are `-c` for config, `-u` for username, `-h` for help, and `-v` for the siftbot version.
 
-Environment variables: `SIFTBOT_CONFIG`, `SIFTBOT_CREDENTIALS`, `SIFTBOT_HOST`, `SIFTBOT_PORT`, `SIFTBOT_USERNAME`, `SIFTBOT_MC_VERSION`, `SIFTBOT_AUTH`, `SIFTBOT_PASSWORD`, `SIFTBOT_LOG_LEVEL`, and `SIFTBOT_AUTOEAT`, `SIFTBOT_SNEAK`, `SIFTBOT_AFK`, `SIFTBOT_CLIENT`, `SIFTBOT_CONSOLE`, `SIFTBOT_RECONNECT`.
+Environment variables: `SIFTBOT_CONFIG`, `SIFTBOT_CREDENTIALS`, `SIFTBOT_HOST`, `SIFTBOT_PORT`, `SIFTBOT_USERNAME`, `SIFTBOT_MC_VERSION`, `SIFTBOT_AUTH`, `SIFTBOT_PASSWORD`, `SIFTBOT_LOG_LEVEL`, and `SIFTBOT_AUTOEAT`, `SIFTBOT_SNEAK`, `SIFTBOT_AFK`, `SIFTBOT_CLIENT`, `SIFTBOT_PLUGINS`, `SIFTBOT_CONSOLE`, `SIFTBOT_RECONNECT`.
 
 Set `SIFTBOT_SOCKS=127.0.0.1:9050` to send the Minecraft connection through a SOCKS5 proxy instead of the local network — useful for testing against a server without using its usual public address. When proxying, point `host`/`port` at the SRV target explicitly (for example `play.example.com` and `19866`): the SRV lookup itself is a local DNS query.
 
@@ -368,6 +408,8 @@ Set `SIFTBOT_SOCKS=127.0.0.1:9050` to send the Minecraft connection through a SO
 | `src/features/client-identity.js` | Vanilla handshake: configuration-phase brand, deduplicated brand, `client_tick_end` per tick, known-packs replies. |
 | `src/credentials.js` | Password store (`credentials.json`, mode 0600): parsing, lookup, atomic save. |
 | `src/features/auth.js` | Captures register/login passwords and answers the server's login prompt. |
+| `src/plugins/manager.js` | Plugin discovery, per-session binding, hot reload and cleanup. |
+| `src/plugins/context.js` | The plugin API: actions, inventory, containers, commands, events/timers. |
 | `src/socks5.js` | Optional SOCKS5 egress (`SIFTBOT_SOCKS`) for testing without the local address. |
 | `src/features/auto-eat.js` | Hunger checks, food choice, equip/consume, held-item restore. |
 | `src/features/sneak.js` | Held shift, spawn re-application, watchdog. |
