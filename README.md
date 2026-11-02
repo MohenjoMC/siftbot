@@ -328,7 +328,7 @@ bot rebinds to the new code. If a save has a syntax error, the last working
 version keeps running and the error is logged.
 
 Full API and lifecycle: **[docs/PLUGINS.md](docs/PLUGINS.md)**. The shipped
-`plugins/example.js` adds `.where`, `.chest` and `.walk`. Plugins are trusted
+`plugins/example.js` adds `.where`, `.chest` and `.step`. Plugins are trusted
 code executed in-process: only install ones you have read.
 
 ## Anti-bot compatibility (Sonar)

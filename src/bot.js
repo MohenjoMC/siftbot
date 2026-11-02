@@ -127,7 +127,6 @@ export class SiftBot extends EventEmitter {
     this.bot = bot
     this.session = session
     this.connecting = false
-    this.emit('session', bot)
 
     session.identity = new ClientIdentity(bot, config.client, logger)
     session.auth = new AutoLogin(bot, config, logger, { credentials: this.credentials })
@@ -136,6 +135,14 @@ export class SiftBot extends EventEmitter {
       isBusy: () => session.autoEat.eating
     })
     session.sneak = new SneakKeeper(bot, config.sneak, logger)
+
+    // Announce the session to plugins once mineflayer has injected its plugins,
+    // so they receive a bot with chat, inventory and world helpers available.
+    const announceSession = () => {
+      if (this.session === session) this.emit('session', bot)
+    }
+    if (typeof bot.chat === 'function') announceSession()
+    else bot.once('inject_allowed', announceSession)
 
     bot.on('onMsaCode', data => {
       logger.info(

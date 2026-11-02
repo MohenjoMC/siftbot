@@ -43,8 +43,8 @@ export default function create (ctx) {
     }
   })
 
-  ctx.registerCommand('walk', {
-    usage: '.walk <forward|back|left|right|jump> [ms]',
+  ctx.registerCommand('step', {
+    usage: '.step <forward|back|left|right|jump> [ms]',
     description: 'Move the bot for a moment (example plugin)',
     run: (args, c) => {
       const direction = (args[0] ?? 'forward').toLowerCase()

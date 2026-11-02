@@ -90,4 +90,4 @@ kept and the error is logged — a broken save cannot take the bots down.
 ## Examples
 
 `plugins/example.js` ships with the project and adds `.where`, `.chest [radius]`,
-and `.walk <direction> [ms]`. Copy it as a starting point.
+and `.step <direction> [ms]`. Copy it as a starting point.

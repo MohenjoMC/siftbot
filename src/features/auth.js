@@ -27,15 +27,27 @@ export class AutoLogin {
     this.lastActionAt = 0
 
     // Capture passwords from commands the bot sends (console, startup, manual).
-    const originalChat = bot.chat.bind(bot)
-    this.originalChat = originalChat
-    bot.chat = text => {
-      this.capturePassword(text)
-      return originalChat(text)
-    }
+    // With `version: 'auto'` mineflayer injects its plugins (including chat)
+    // only after the version ping, so the wrapper is installed then as well.
+    this.chatPatched = false
+    this.originalChat = null
+    this.patchChat()
+    this.onInjectAllowed = () => this.patchChat()
+    bot.once?.('inject_allowed', this.onInjectAllowed)
 
     this.onMessage = message => this.handleMessage(message)
     bot.on('message', this.onMessage)
+  }
+
+  patchChat () {
+    if (this.chatPatched || typeof this.bot.chat !== 'function') return
+    const original = this.bot.chat.bind(this.bot)
+    this.originalChat = original
+    this.bot.chat = text => {
+      this.capturePassword(text)
+      return original(text)
+    }
+    this.chatPatched = true
   }
 
   /** Password from the store, falling back to the configured one. */
@@ -101,7 +113,10 @@ export class AutoLogin {
 
   send (command) {
     try {
-      this.originalChat(command)
+      const chat = this.originalChat ??
+        (typeof this.bot.chat === 'function' ? this.bot.chat.bind(this.bot) : null)
+      if (!chat) throw new Error('chat is not available yet')
+      chat(command)
     } catch (err) {
       this.logger.debug(`auth: command failed: ${err.message}`)
     }
@@ -111,8 +126,9 @@ export class AutoLogin {
     if (this.stopped) return
     this.stopped = true
     this.bot.removeListener('message', this.onMessage)
+    if (this.onInjectAllowed) this.bot.removeListener('inject_allowed', this.onInjectAllowed)
     try {
-      this.bot.chat = this.originalChat
+      if (this.chatPatched && this.originalChat) this.bot.chat = this.originalChat
     } catch {
       // Client already gone.
     }
