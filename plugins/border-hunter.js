@@ -90,6 +90,19 @@ function menuLabel (window) {
   return componentText(window?.title) || window?.type || 'menu'
 }
 
+function logMenu (context, window) {
+  const slots = window?.slots ?? []
+  context.log(`rtp: menu "${menuLabel(window)}" (${slots.length} slots)`)
+  let shown = 0
+  for (let slot = 0; slot < slots.length && shown < 12; slot++) {
+    const name = slotName(window, slot)
+    if (!name) continue
+    const count = slots[slot]?.count > 1 ? ` x${slots[slot].count}` : ''
+    context.log(`  ${slot}: ${name}${count}`)
+    shown++
+  }
+}
+
 /**
  * `.border [tries]` — run /rtp repeatedly, score every landing, and stop as soon
  * as one lands 1000-2000 blocks from the 80k border on solid land. Otherwise the
@@ -222,6 +235,7 @@ export default function create (ctx) {
     if (slot < 0) slot = findSlot(menu, /random|rtp|wild/)
     if (slot < 0) {
       context.log('rtp: the menu has no teleport entry')
+      logMenu(context, menu)
       return false
     }
 
@@ -233,6 +247,7 @@ export default function create (ctx) {
     if (slot < 0) slot = findSlot(menu, /teleport|\btp\b/)
     if (slot < 0) {
       context.log(`rtp: no RTP entry on "${menuLabel(menu)}"`)
+      logMenu(context, menu)
       return false
     }
 
@@ -278,10 +293,36 @@ export default function create (ctx) {
 
   async function openMenu (context) {
     const bot = context.bot
-    if (bot.currentWindow) return bot.currentWindow
+
+    if (bot.currentWindow) {
+      context.log(`rtp: closing stray window "${menuLabel(bot.currentWindow)}"`)
+      try {
+        await bot.closeWindow(bot.currentWindow)
+      } catch {
+        // Already closed.
+      }
+      await sleep(600)
+    }
+
+    // Pick a plausible menu item and hold it, otherwise activateItem does
+    // nothing useful (or opens whatever happens to be in hand).
+    const menuItems = ['player_head', 'compass', 'clock', 'nether_star', 'paper', 'enchanted_book', 'written_book', 'chest', 'ender_chest']
+    const inventory = bot.inventory?.items?.() ?? []
+    context.log(`rtp: held ${bot.heldItem?.name ?? 'nothing'}; carrying ${inventory.map(item => item.name).join(', ').slice(0, 140) || 'nothing'}`)
+    const candidate = inventory.find(item => menuItems.includes(item.name))
+    if (candidate && bot.heldItem?.name !== candidate.name) {
+      try {
+        await bot.equip(candidate, 'hand')
+        context.log(`rtp: holding ${candidate.name}`)
+      } catch (err) {
+        context.log(`rtp: could not equip ${candidate.name}: ${err.message}`)
+      }
+    }
+
     bot.activateItem()
     const window = await waitForWindow(context, 4000)
-    if (!window) context.log('rtp: no menu opened (is the menu item held?)')
+    if (!window) context.log('rtp: no menu opened')
+    else context.log(`rtp: opened "${menuLabel(window)}"`)
     return window
   }
 
