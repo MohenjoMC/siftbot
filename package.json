@@ -6,7 +6,8 @@
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "siftbot": "src/index.js"
+    "siftbot": "src/index.js",
+    "siftbot-ui": "src/tui.tsx"
   },
   "engines": {
     "node": ">=20.11",

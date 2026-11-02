@@ -1,0 +1,16 @@
+[Unit]
+Description=siftbot TUI (tmux session)
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=SIFT_UI_FILE=%h/silfmc-live/instances.json
+Environment=SIFT_UI_PLUGINS=%h/silfmc-live/plugins
+Environment=LD_LIBRARY_PATH=%h/.local/tmux/usr/lib/x86_64-linux-gnu:%h/.local/tor/usr/lib/x86_64-linux-gnu
+Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/tmux new-session -d -s siftbot-ui %h/.local/bin/siftbot-ui
+ExecStop=%h/.local/bin/tmux kill-session -t siftbot-ui
+
+[Install]
+WantedBy=default.target

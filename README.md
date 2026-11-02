@@ -44,22 +44,36 @@ Run `npm start -- --help` for every option. The bot reads `./config.json` automa
 
 ```bash
 npm install
-npm run ui
+npm link          # installs the `siftbot` and `siftbot-ui` commands
+siftbot-ui
 ```
 
-If Bun is missing:
-
-```bash
-curl -fsSL https://bun.sh/install | bash
-```
-
-The UI stores its bots in `instances.json`. On first launch it adopts an existing `config.json` as the first bot, otherwise it starts empty — press `a` to add one.
+`siftbot-ui` is the control room; `siftbot` is the single-bot CLI. Both run from any directory. The UI stores its bots in `instances.json`. On first launch it adopts an existing `config.json` as the first bot, otherwise it starts empty — press `a` to add one.
 
 - `↑` / `↓` selects a bot.
 - `s` starts or stops it; `r` reconnects.
 - `i` focuses its console. Type chat, `/server-command`, or the same `.commands` as the CLI.
 - `a`, `e`, `d` add, edit and delete bots.
 - `?` shows help, `q` quits.
+
+### Run the TUI at boot
+
+A terminal UI needs a TTY, so the shipped unit starts it inside a named tmux
+session (`deploy/systemd/siftbot-ui.service`):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/siftbot-ui.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now siftbot-ui.service
+loginctl enable-linger "$USER"      # start at boot without an interactive login
+tmux attach -t siftbot-ui           # open the control room from any shell
+```
+
+Stop with `systemctl --user stop siftbot-ui`. The unit assumes `siftbot-ui` and
+`tmux` are in `~/.local/bin` and the instances file is `~/silfmc-live/instances.json`;
+adjust the paths for your layout. Never run the API daemon and the TUI service
+against the same instances file — both own the bot sessions.
 
 Each bot has its own username, host, port, auth mode, version, password, auto-eat threshold and feature toggles. Bots run in the same process but have separate sessions and log buffers, so stopping or restarting one does not affect the others. Every bot is a full Minecraft client, so a handful per process is comfortable; dozens will use a lot of RAM.
 
