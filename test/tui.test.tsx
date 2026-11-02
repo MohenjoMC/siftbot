@@ -141,3 +141,78 @@ test('focuses the console and reports an offline send', async () => {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('renders an in-game menu as a popup and clicks a slot', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'siftbot-tui-menu-'))
+  const file = path.join(dir, 'instances.json')
+  const manager = new InstanceManager({ file })
+  manager.load()
+  const instance = manager.add({
+    label: 'alpha',
+    config: { ...defaultConfig(), username: 'alpha', host: 'alpha.example.com' }
+  })
+
+  const clicks = []
+  const fakeWindow = {
+    id: 1,
+    type: 'minecraft:generic_9x3',
+    title: 'Homes & Teleports',
+    slots: [
+      null,
+      {
+        name: 'ender_pearl',
+        count: 1,
+        customName: { type: 'compound', value: { text: { type: 'string', value: 'Random Teleport' } } }
+      }
+    ]
+  }
+  instance.runtime = {
+    active: true,
+    bot: {
+      currentWindow: fakeWindow,
+      clickWindow: (slot) => clicks.push(slot),
+      closeWindow: () => {}
+    },
+    status: () => ({
+      connected: true,
+      gameMode: 'survival',
+      version: '26.1',
+      host: 'alpha.example.com',
+      port: 25565,
+      health: 20,
+      food: 20,
+      saturation: 5,
+      position: null,
+      heldItem: null,
+      players: 1,
+      ping: 30,
+      sneak: false,
+      autoEatEnabled: true,
+      afkEnabled: true,
+      nextAfkMs: null,
+      eating: false,
+      lastEaten: null,
+      uptimeMs: 1000,
+      reconnectInMs: null,
+      reconnectAttempt: 0
+    })
+  }
+
+  const setup = await testRender(
+    <App manager={manager} dataFile="instances.json" />,
+    { width: 110, height: 32 }
+  )
+
+  try {
+    const frame = await setup.waitForFrame(current => current.includes('Homes & Teleports'))
+    expect(frame).toContain('Random Teleport')
+    expect(frame).toContain('Enter click')
+
+    await act(async () => { setup.mockInput.pressEnter() })
+    await setup.renderOnce()
+    expect(clicks).toEqual([1])
+  } finally {
+    await setup.dispose()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

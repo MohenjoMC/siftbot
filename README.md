@@ -56,6 +56,10 @@ siftbot-ui
 - `a`, `e`, `d` add, edit and delete bots.
 - `?` shows help, `q` quits.
 
+In-game menus (chests, shops, RTP) render as a **popup grid** automatically. `u` right-clicks
+the held item to open a server menu, `g` reopens the popup, arrows move, `Enter` clicks a
+slot, `Esc` closes the window.
+
 ### Run the TUI at boot
 
 A terminal UI needs a TTY, so the shipped unit starts it inside a named tmux

@@ -4,6 +4,7 @@ import type { InputRenderable } from '@opentui/core'
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { defaultConfig } from './config.js'
 import { formatCoords, formatDuration } from './util.js'
+import { describeWindow } from './window.js'
 
 const COLORS = {
   text: '#c0caf5',
@@ -369,6 +370,8 @@ export function App ({ manager, dataFile }) {
   const [selectedId, setSelectedId] = useState(manager.list()[0]?.id ?? null)
   const [focusConsole, setFocusConsole] = useState(false)
   const [modal, setModal] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [slotIndex, setSlotIndex] = useState(0)
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
   const inputRef = useRef(null)
@@ -377,6 +380,9 @@ export function App ({ manager, dataFile }) {
   const selected = selectedId ? manager.get(selectedId) : null
   const instances = manager.list()
   const selectedStatus = selected ? manager.statusOf(selected) : 'offline'
+  const windowData = selected ? describeWindow(selected.runtime?.bot?.currentWindow) : null
+  const windowId = windowData?.id ?? null
+  const menuRows = windowData ? Math.ceil(windowData.size / 9) : 0
 
   const notify = message => {
     setToast(message)
@@ -418,6 +424,20 @@ export function App ({ manager, dataFile }) {
     else inputRef.current?.blur?.()
   }, [focusConsole, selectedId])
 
+  // An in-game menu (chest, shop, RTP, ...) opens as a popup, with the first
+  // non-empty slot selected so Enter is immediately useful.
+  useEffect(() => {
+    if (!windowData) {
+      setMenuOpen(false)
+      return
+    }
+    setFocusConsole(false)
+    setMenuOpen(true)
+    const first = windowData.slots.findIndex(Boolean)
+    setSlotIndex(first >= 0 ? first : 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowId])
+
   const shutdown = async () => {
     try {
       await manager.stopAll()
@@ -450,6 +470,47 @@ export function App ({ manager, dataFile }) {
 
   const run = fn => {
     void Promise.resolve().then(fn).catch(err => notify(err?.message ?? String(err)))
+  }
+
+  const clickSlot = () => {
+    if (!selected?.runtime?.bot || !windowData) return
+    if (!windowData.slots[slotIndex]) return
+    run(() => selected.runtime.bot.clickWindow(slotIndex, 0, 0))
+  }
+
+  const closeMenuWindow = () => {
+    const bot = selected?.runtime?.bot
+    if (bot?.currentWindow) run(() => bot.closeWindow(bot.currentWindow))
+    setMenuOpen(false)
+  }
+
+  const handleMenuKey = key => {
+    const last = (windowData?.size ?? 1) - 1
+    switch (key.name) {
+      case 'escape':
+        closeMenuWindow()
+        break
+      case 'g':
+        setMenuOpen(false)
+        break
+      case 'left':
+        setSlotIndex(index => Math.max(0, index - 1))
+        break
+      case 'right':
+        setSlotIndex(index => Math.min(last, index + 1))
+        break
+      case 'up':
+        setSlotIndex(index => Math.max(0, index - 9))
+        break
+      case 'down':
+        setSlotIndex(index => Math.min(last, index + 9))
+        break
+      case 'return':
+        clickSlot()
+        break
+      default:
+        break
+    }
   }
 
   const toggleBot = () => {
@@ -528,6 +589,11 @@ export function App ({ manager, dataFile }) {
     if (modal) return
     if (key.eventType === 'release') return
 
+    if (menuOpen && windowData) {
+      handleMenuKey(key)
+      return
+    }
+
     if (focusConsole) {
       if (key.name === 'escape') {
         setFocusConsole(false)
@@ -554,6 +620,13 @@ export function App ({ manager, dataFile }) {
         break
       case 'r':
         reconnect()
+        break
+      case 'u':
+        if (selected?.runtime?.bot) run(() => selected.runtime.bot.activateItem())
+        break
+      case 'g':
+        if (windowData) setMenuOpen(true)
+        else notify('No in-game menu is open')
         break
       case 'a':
         openAdd()
@@ -744,15 +817,70 @@ export function App ({ manager, dataFile }) {
         </box>
       </box>
 
+      {menuOpen && windowData && (
+        <box
+          position="absolute"
+          top={2}
+          left={2}
+          zIndex={10}
+          width={Math.min(Math.max(width - 4, 80), 172)}
+          height={Math.min(menuRows * 2 + 4, 42)}
+          flexDirection="column"
+          borderStyle="rounded"
+          borderColor={COLORS.cyan}
+          backgroundColor={COLORS.panel}
+          title={` ${windowData.title.slice(0, 38)} `}
+        >
+          <MenuGrid data={windowData} index={slotIndex} />
+          <box height={1} paddingLeft={1}>
+            <text fg={COLORS.faint}>←↑↓→ move · Enter click · Esc close · g hide</text>
+          </box>
+        </box>
+      )}
+
       <Footer
         text={focusConsole
           ? 'Enter send · Esc back · .help lists commands'
           : '↑↓ select · s start/stop · r reconnect · a add · e edit · d delete\n' +
-            'i console · c clear · ? help · q quit'}
+            'i console · u use item · g menu · c clear · ? help · q quit'}
         toast={toast}
       />
     </box>
   )
+}
+
+function trimLabel (label, max) {
+  const clean = String(label ?? '').replace(/\s+/g, ' ').trim()
+  return clean.length > max ? clean.slice(0, max - 1) + '…' : clean
+}
+
+function MenuGrid ({ data, index }) {
+  const rows = []
+  const rowCount = Math.ceil(data.size / 9)
+  for (let row = 0; row < rowCount; row++) {
+    const cells = []
+    for (let column = 0; column < 9; column++) {
+      const slot = row * 9 + column
+      const item = data.slots[slot]
+      const active = slot === index
+      cells.push(
+        <box
+          key={slot}
+          width={18}
+          height={2}
+          flexDirection="column"
+          backgroundColor={active ? COLORS.selected : undefined}
+        >
+          <text fg={active ? COLORS.white : item ? COLORS.text : COLORS.faint}>
+            {item ? trimLabel(item.label, 16) : '·'}
+          </text>
+          <text fg={COLORS.faint}>{item && item.count > 1 ? `x${item.count}` : ' '}</text>
+        </box>
+      )
+    }
+    rows.push(<box key={row} flexDirection="row">{cells}</box>)
+  }
+  return <box flexDirection="column">{rows}</box>
 }
 
 function Header ({ manager, dataFile }) {

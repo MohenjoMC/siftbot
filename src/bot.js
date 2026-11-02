@@ -184,6 +184,9 @@ export class SiftBot extends EventEmitter {
     bot.on('playerJoined', player => logger.debug(`+ ${player.username}`))
     bot.on('playerLeft', player => logger.debug(`- ${player.username}`))
 
+    bot.on('windowOpen', window => this.emit('window', window))
+    bot.on('windowClose', () => this.emit('window', null))
+
     bot.on('death', () => {
       logger.warn(`died at ${formatCoords(bot.entity?.position)}; respawning`)
     })

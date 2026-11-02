@@ -202,6 +202,7 @@ export class InstanceManager extends EventEmitter {
     this.plugins?.attachSession({ id, runtime, commands, logger })
 
     runtime.on('spawn', () => this.emit('change'))
+    runtime.on('window', () => this.emit('change'))
     runtime.on('disconnect', () => this.emit('change'))
     runtime.on('fatal', message => {
       instance.fatal = message
