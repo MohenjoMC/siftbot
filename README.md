@@ -57,10 +57,11 @@ siftbot-ui
 - `?` shows help, `q` quits.
 
 In-game menus (chests, shops, RTP) render as a **Minecraft-style popup**: 9-column
-slot boxes with item icons and the selected item's name, kept on screen after the
-window closes so a teleport doesn't yank it away. `u` right-clicks the held item
-to open a server menu, `g` reopens the popup, arrows move, `Enter` clicks a slot,
-`Esc` closes the window (or dismisses the popup once it has closed).
+slot boxes showing each item's name, kept on screen after the window closes so a
+teleport doesn't yank it away. Slots are interactive — hover to select, click to
+activate — and the keyboard works too: `u` right-clicks the held item to open a
+server menu, `g` reopens the popup, arrows move, `Enter` clicks a slot, `Esc`
+closes the window (or dismisses the popup once it has closed).
 
 ### Run the TUI at boot
 

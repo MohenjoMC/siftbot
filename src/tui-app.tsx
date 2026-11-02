@@ -472,10 +472,11 @@ export function App ({ manager, dataFile }) {
     void Promise.resolve().then(fn).catch(err => notify(err?.message ?? String(err)))
   }
 
-  const clickSlot = () => {
+  const clickSlot = slot => {
     if (!selected?.runtime?.bot || !windowData) return
-    if (!windowData.slots[slotIndex]) return
-    run(() => selected.runtime.bot.clickWindow(slotIndex, 0, 0))
+    if (!windowData.slots[slot]) return
+    setSlotIndex(slot)
+    run(() => selected.runtime.bot.clickWindow(slot, 0, 0))
   }
 
   const closeMenuWindow = () => {
@@ -507,7 +508,7 @@ export function App ({ manager, dataFile }) {
         setSlotIndex(index => Math.min(last, index + 9))
         break
       case 'return':
-        clickSlot()
+        clickSlot(slotIndex)
         break
       default:
         break
@@ -824,15 +825,21 @@ export function App ({ manager, dataFile }) {
           top={2}
           left={2}
           zIndex={10}
-          width={Math.min(Math.max(width - 4, 70), 74)}
-          height={Math.min(menuRows * 3 + 5, 42)}
+          width={Math.min(Math.max(width - 4, 104), 108)}
+          height={Math.min(menuRows * 4 + 5, 44)}
           flexDirection="column"
           borderStyle="double"
           borderColor={COLORS.cyan}
           backgroundColor={COLORS.header}
           title={` ${activeWindow.title.slice(0, 40)} `}
         >
-          <MenuGrid data={activeWindow} index={slotIndex} />
+          <MenuGrid
+            data={activeWindow}
+            index={slotIndex}
+            live={Boolean(windowData)}
+            onSelect={slot => setSlotIndex(slot)}
+            onActivate={slot => clickSlot(slot)}
+          />
           <box height={1} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
             <text fg={COLORS.white}>{slotLabel(activeWindow, slotIndex)}</text>
             <text fg={windowData ? COLORS.green : COLORS.faint}>{windowData ? 'live' : 'closed'}</text>
@@ -854,41 +861,15 @@ export function App ({ manager, dataFile }) {
   )
 }
 
-const ITEM_ICONS = {
-  compass: '🧭',
-  clock: '🕐',
-  knowledge_book: '📖',
-  writable_book: '📕',
-  written_book: '📗',
-  ender_pearl: '🔮',
-  ender_chest: '🧰',
-  emerald: '💚',
-  diamond: '💎',
-  amethyst_shard: '🔷',
-  amethyst_cluster: '🔶',
-  gold_ingot: '🟨',
-  iron_ingot: '⬜',
-  potion: '🧪',
-  sunflower: '🌻',
-  painting: '🖼',
-  netherite_helmet: '⛑',
-  player_head: '🗿',
-  diamond_sword: '⚔',
-  light_blue_dye: '🎨',
-  paper: '📜',
-  map: '🗺',
-  arrow: '➶'
-}
-
-function itemIcon (name) {
-  if (ITEM_ICONS[name]) return ITEM_ICONS[name]
-  if (/_pane$|_glass/.test(name)) return '▦'
-  if (/_log$|_planks$|_wood$|_stem$/.test(name)) return '🪵'
-  if (/_sword$|_axe$|_pickaxe$|_shovel$|_hoe$/.test(name)) return '⛏'
-  if (/_helmet$|_chestplate$|_leggings$|_boots$/.test(name)) return '🛡'
-  if (/_seeds$|_sapling$|_flower$|tulip|daisy|orchid|poppy/.test(name)) return '🌱'
-  if (/_shard$|_cluster$/.test(name)) return '🔷'
-  return '❖'
+function menuLabelLines (label, width = 9) {
+  const clean = String(label ?? '').replace(/\s+/g, ' ').trim()
+  if (clean.length <= width) return [clean]
+  if (clean.length <= width * 2) {
+    const cut = clean.lastIndexOf(' ', width)
+    if (cut > 0) return [clean.slice(0, cut), clean.slice(cut + 1)]
+    return [clean.slice(0, width), clean.slice(width)]
+  }
+  return [clean.slice(0, width), clean.slice(width, width * 2 - 1) + '…']
 }
 
 function slotLabel (data, index) {
@@ -897,7 +878,7 @@ function slotLabel (data, index) {
   return `${item.label}${item.count > 1 ? ` ×${item.count}` : ''}`
 }
 
-function MenuGrid ({ data, index }) {
+function MenuGrid ({ data, index, live, onSelect, onActivate }) {
   const rows = []
   const rowCount = Math.ceil(data.size / 9)
   for (let row = 0; row < rowCount; row++) {
@@ -906,21 +887,26 @@ function MenuGrid ({ data, index }) {
       const slot = row * 9 + column
       const item = data.slots[slot]
       const active = slot === index
+      const lines = item ? menuLabelLines(item.label) : ['', '']
       cells.push(
         <box
           key={slot}
-          width={7}
-          height={3}
+          width={11}
+          height={4}
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
           borderStyle="single"
           borderColor={active ? COLORS.cyan : COLORS.border}
           backgroundColor={active ? COLORS.selected : COLORS.panel}
+          onMouseMove={() => onSelect(slot)}
+          onMouseDown={() => {
+            onSelect(slot)
+            if (live && item) onActivate(slot)
+          }}
         >
-          <text fg={active ? COLORS.white : COLORS.text}>
-            {item ? itemIcon(item.name) : ' '}
-          </text>
+          <text fg={active ? COLORS.white : COLORS.text}>{lines[0] || ' '}</text>
+          <text fg={COLORS.faint}>{lines[1] || ' '}</text>
         </box>
       )
     }
