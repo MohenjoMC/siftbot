@@ -39,6 +39,57 @@ export function evaluateLocation ({ x, z, ground, biome }, {
   return { edgeDistance, inWindow, safeGround, goodBiome, score }
 }
 
+const SMALL_CAPS = 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ'
+const ASCII_LOWER = 'abcdefghijklmnopqrstuvwxyz'
+
+/** Fold stylised Minecraft labels (small caps, punctuation) to plain lower-case. */
+export function foldLabel (text) {
+  let out = ''
+  for (const character of String(text ?? '')) {
+    const index = SMALL_CAPS.indexOf(character)
+    out += index >= 0 ? ASCII_LOWER[index] : character
+  }
+  return out.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Flatten a 1.20.5+ NBT text component (type/value wrappers) to plain text. */
+export function componentText (node) {
+  const out = []
+  const visit = n => {
+    if (n == null) return
+    if (typeof n === 'string' || typeof n === 'number') { out.push(String(n)); return }
+    if (Array.isArray(n)) { n.forEach(visit); return }
+    if (typeof n !== 'object') return
+    if (typeof n.text === 'string') out.push(n.text)
+    else if (n.text && typeof n.text === 'object') visit(n.text)
+    if (typeof n.value === 'string' || typeof n.value === 'number') out.push(String(n.value))
+    else if (n.value && typeof n.value === 'object') visit(n.value)
+    if (n.extra) visit(n.extra)
+  }
+  visit(node)
+  return out.join('')
+}
+
+export function slotName (window, slot) {
+  const item = window?.slots?.[slot]
+  if (!item) return ''
+  return componentText(item.customName) || item.name || ''
+}
+
+/** First slot whose folded label matches the regex, or -1. */
+export function findSlot (window, pattern) {
+  if (!Array.isArray(window?.slots)) return -1
+  for (let slot = 0; slot < window.slots.length; slot++) {
+    const name = slotName(window, slot)
+    if (name && pattern.test(foldLabel(name))) return slot
+  }
+  return -1
+}
+
+function menuLabel (window) {
+  return componentText(window?.title) || window?.type || 'menu'
+}
+
 /**
  * `.border [tries]` — run /rtp repeatedly, score every landing, and stop as soon
  * as one lands 1000-2000 blocks from the 80k border on solid land. Otherwise the
@@ -47,12 +98,21 @@ export function evaluateLocation ({ x, z, ground, biome }, {
 export default function create (ctx) {
   let busy = false
   let lastMessage = ''
+  let recent = []
 
-  ctx.on('message', message => {
+  ctx.on('message', (message, position) => {
     try {
-      lastMessage = message?.toString?.() ?? ''
+      const text = (message?.toString?.() ?? '').trim()
+      if (!text) return
+      if (position && position !== 'chat') {
+        recent.push(`${position}: ${text}`)
+        if (recent.length > 8) recent.shift()
+      }
+      if (/rtp|teleport|random|cooldown|wait|permission|denied|unknown command/i.test(text)) {
+        lastMessage = text
+      }
     } catch {
-      lastMessage = ''
+      // Ignore malformed chat components.
     }
   })
 
@@ -61,6 +121,17 @@ export default function create (ctx) {
     description: 'RTP repeatedly and find the best spot 1k-2k from the 40k border',
     aliases: ['border-hunt'],
     run: args => hunt(ctx, { tries: Math.min(Math.max(Number(args[0]) || 10, 1), 100) })
+  })
+
+  ctx.registerCommand('rtp', {
+    usage: '.rtp',
+    description: 'Trigger RTP through the server menu',
+    run: async () => {
+      if (!ctx.connected) return ctx.log('rtp: bot is not connected')
+      ctx.log('rtp: opening the server menu…')
+      const moved = await runRtp(ctx)
+      ctx.log(moved ? 'rtp: teleported' : 'rtp: could not trigger a teleport')
+    }
   })
 
   async function hunt (context, { tries }) {
@@ -73,12 +144,20 @@ export default function create (ctx) {
     try {
       for (let attempt = 1; attempt <= tries; attempt++) {
         lastMessage = ''
+        recent = []
         const before = context.bot.entity.position.clone()
-        context.chat('/rtp')
+        context.log(`border-hunter: attempt ${attempt}/${tries} — running RTP…`)
 
-        if (!(await waitForTeleport(context, before))) {
+        const started = await runRtp(context)
+        if (!started && !(await waitForTeleport(context, before))) {
           const cooldown = /rtp.*(?:wait|cooldown|slow|again|seconds)/i.test(lastMessage)
           context.log(`border-hunter: /rtp did not move the bot${cooldown ? ' (cooldown)' : ''}`)
+          if (lastMessage.trim()) {
+            context.log(`border-hunter: server said: ${lastMessage.trim().slice(0, 160)}`)
+          }
+          if (recent.length > 0) {
+            context.log(`border-hunter: recent messages: ${recent.join(' | ').slice(0, 300)}`)
+          }
           if (cooldown && attempt < tries) {
             context.log('border-hunter: waiting 30s for the cooldown…')
             await sleep(30000)
@@ -124,6 +203,99 @@ export default function create (ctx) {
         // Disconnected.
       }
     }
+  }
+
+  async function runRtp (context) {
+    const bot = context.bot
+    const before = bot.entity.position.clone()
+
+    // 1) plain command, if this server exposes one
+    context.chat('/rtp')
+    await sleep(3000)
+    if (before.distanceTo(bot.entity.position) > 16) return true
+
+    // 2) drive the held menu item instead
+    let menu = await openMenu(context)
+    if (!menu) return false
+
+    let slot = findSlot(menu, /homes?.*teleports?|teleports?|warps?/)
+    if (slot < 0) slot = findSlot(menu, /random|rtp|wild/)
+    if (slot < 0) {
+      context.log('rtp: the menu has no teleport entry')
+      return false
+    }
+
+    context.log(`rtp: opening "${slotName(menu, slot)}"`)
+    menu = await clickSlotAndWait(context, slot)
+    if (!menu) return false
+
+    slot = findSlot(menu, /random\s*(?:teleport|tp)|rtp|wilderness|wild/)
+    if (slot < 0) slot = findSlot(menu, /teleport|\btp\b/)
+    if (slot < 0) {
+      context.log(`rtp: no RTP entry on "${menuLabel(menu)}"`)
+      return false
+    }
+
+    context.log(`rtp: clicking "${slotName(menu, slot)}"`)
+    await bot.clickWindow(slot, 0, 0)
+    return waitForMove(context, before, 12000)
+  }
+
+  /** Wait for a teleport, clicking a confirm/teleport button if one appears. */
+  async function waitForMove (context, before, ms) {
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      await sleep(300)
+      if (!context.connected) return false
+      if (before.distanceTo(context.bot.entity.position) > 16) return true
+      const current = context.bot.currentWindow
+      if (current) {
+        const confirm = findSlot(current, /confirm|accept|^yes\b|teleport now/)
+        if (confirm >= 0) {
+          context.log(`rtp: confirming "${slotName(current, confirm)}"`)
+          await context.bot.clickWindow(confirm, 0, 0)
+        }
+      }
+    }
+    return false
+  }
+
+  function waitForWindow (context, ms) {
+    const bot = context.bot
+    if (bot.currentWindow) return Promise.resolve(bot.currentWindow)
+    return new Promise(resolve => {
+      const timer = setTimeout(() => done(null), ms)
+      timer.unref?.()
+      const done = window => {
+        clearTimeout(timer)
+        bot.removeListener('windowOpen', onOpen)
+        resolve(window ?? bot.currentWindow ?? null)
+      }
+      const onOpen = window => done(window)
+      bot.once('windowOpen', onOpen)
+    })
+  }
+
+  async function openMenu (context) {
+    const bot = context.bot
+    if (bot.currentWindow) return bot.currentWindow
+    bot.activateItem()
+    const window = await waitForWindow(context, 4000)
+    if (!window) context.log('rtp: no menu opened (is the menu item held?)')
+    return window
+  }
+
+  async function clickSlotAndWait (context, slot, ms = 1600) {
+    const bot = context.bot
+    const beforeId = bot.currentWindow?.id ?? null
+    await bot.clickWindow(slot, 0, 0)
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      await sleep(150)
+      if (!context.connected) return null
+      if (bot.currentWindow && bot.currentWindow.id !== beforeId) return bot.currentWindow
+    }
+    return bot.currentWindow ?? null
   }
 
   async function waitForTeleport (context, before) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { evaluateLocation } from '../plugins/border-hunter.js'
+import { evaluateLocation, findSlot, foldLabel } from '../plugins/border-hunter.js'
 
 const GROUND = { name: 'grass_block', safe: true }
 
@@ -43,4 +43,22 @@ test('missing ground or biome is handled', () => {
   assert.equal(spot.safeGround, false)
   assert.equal(spot.goodBiome, true)
   assert.equal(spot.inWindow, true)
+})
+
+test('foldLabel normalises stylised menu labels', () => {
+  assert.equal(foldLabel('ʜᴏᴍᴇs & ᴛᴇʟᴇᴘᴏʀᴛs'), 'homes teleports')
+  assert.equal(foldLabel('Random Teleport'), 'random teleport')
+  assert.equal(foldLabel('ɢᴇᴛᴛɪɴɢ sᴛᴀʀᴛᴇᴅ'), 'getting started')
+})
+
+test('findSlot locates menu entries by folded label', () => {
+  const slots = []
+  slots[11] = { name: 'compass', count: 1, customName: { type: 'compound', value: { text: { type: 'string', value: 'ɢᴇᴛᴛɪɴɢ sᴛᴀʀᴛᴇᴅ' } } } }
+  slots[24] = { name: 'ender_pearl', count: 1, customName: { type: 'compound', value: { text: { type: 'string', value: 'ʜᴏᴍᴇs & ᴛᴇʟᴇᴘᴏʀᴛs' } } } }
+  const window = { slots }
+
+  assert.equal(findSlot(window, /homes/), 24)
+  assert.equal(findSlot(window, /getting started/), 11)
+  assert.equal(findSlot(window, /random teleport/), -1)
+  assert.equal(findSlot({ slots: [] }, /anything/), -1)
 })

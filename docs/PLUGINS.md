@@ -96,3 +96,8 @@ and `.step <direction> [ms]`. Copy it as a starting point.
 nearest log, chop it, craft four planks and a crafting table. It includes a small
 waypoint walker (face, walk, jump, sidestep) because pathfinding libraries do not
 support the 26.x protocol yet. `.tree` skips the `/rtp` step.
+
+`plugins/border-hunter.js` adds `.rtp` (opens the held server menu and clicks
+through to the random-teleport entry) and `.border [tries]` (repeats RTP and
+scores each landing against the 40k border). Labels are matched with small-caps
+folding, so "ʜᴏᴍᴇs & ᴛᴇʟᴇᴘᴏʀᴛs" matches `homes`.
