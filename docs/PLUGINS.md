@@ -91,3 +91,8 @@ kept and the error is logged — a broken save cannot take the bots down.
 
 `plugins/example.js` ships with the project and adds `.where`, `.chest [radius]`,
 and `.step <direction> [ms]`. Copy it as a starting point.
+
+`plugins/tree-to-table.js` adds `.tree` and `.rtp-tree`: run `/rtp`, walk to the
+nearest log, chop it, craft four planks and a crafting table. It includes a small
+waypoint walker (face, walk, jump, sidestep) because pathfinding libraries do not
+support the 26.x protocol yet. `.tree` skips the `/rtp` step.

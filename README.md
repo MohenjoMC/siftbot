@@ -327,9 +327,11 @@ multi-bot and reconnects bind cleanly.
 bot rebinds to the new code. If a save has a syntax error, the last working
 version keeps running and the error is logged.
 
-Full API and lifecycle: **[docs/PLUGINS.md](docs/PLUGINS.md)**. The shipped
-`plugins/example.js` adds `.where`, `.chest` and `.step`. Plugins are trusted
-code executed in-process: only install ones you have read.
+Full API and lifecycle: **[docs/PLUGINS.md](docs/PLUGINS.md)**. Two plugins ship
+with the project: `example.js` (`.where`, `.chest`, `.step`) and
+`tree-to-table.js` (`.rtp-tree` — RTP, walk to the nearest tree, craft planks and
+a crafting table). Plugins are trusted code executed in-process: only install
+ones you have read.
 
 ## Anti-bot compatibility (Sonar)
 
