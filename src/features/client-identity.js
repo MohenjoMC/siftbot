@@ -50,13 +50,15 @@ export class ClientIdentity {
     this.knownPacksAnswered = false
     this.configured = false
 
+    // Debug switches for isolating anticheat interactions (see docs).
     this.setupBrand()
-    this.setupSettings()
-    this.setupMovement()
+    if (process.env.SIFT_NO_SETTINGS_PATCH !== '1') this.setupSettings()
+    if (process.env.SIFT_NO_MOVEMENT_PATCH !== '1') this.setupMovement()
     this.setupInventory()
     this.setupVehicles()
     this.setupTransfer()
-    this.setupTickEnd()
+    if (process.env.SIFT_NO_TICK_END !== '1') this.setupTickEnd()
+    if (process.env.SIFT_NO_PLAYER_INPUT !== '1') this.setupPlayerInput()
     this.setupKnownPacks()
   }
 
@@ -72,16 +74,19 @@ export class ClientIdentity {
       : BRAND_CHANNEL_LEGACY
     const usesConfigurationState = Boolean(bot.supportFeature?.('hasConfigurationState'))
     const hasTickEnd = typeof bot.protocolVersion === 'number' && bot.protocolVersion >= TICK_END_MIN_PROTOCOL
+    const hasPlayerInput = Boolean(bot.supportFeature?.('newPlayerInputPacket'))
 
-    const fingerprint = `${brandChannel}|${usesConfigurationState}|${hasTickEnd}`
+    const fingerprint = `${brandChannel}|${usesConfigurationState}|${hasTickEnd}|${hasPlayerInput}`
     if (fingerprint !== this.versionFingerprint) {
       this.versionFingerprint = fingerprint
       this.brandChannel = brandChannel
       this.usesConfigurationState = usesConfigurationState
       this.hasTickEnd = hasTickEnd
+      this.hasPlayerInput = hasPlayerInput
       this.logger.debug(
         `client: ${brandChannel}, configuration state ${usesConfigurationState ? 'yes' : 'no'}, ` +
-        `tick_end ${hasTickEnd ? 'on' : 'off'} (protocol ${bot.protocolVersion ?? 'unknown'})`
+        `tick_end ${hasTickEnd ? 'on' : 'off'}, player_input ${hasPlayerInput ? 'on' : 'off'} ` +
+        `(protocol ${bot.protocolVersion ?? 'unknown'})`
       )
     }
 
@@ -461,9 +466,59 @@ export class ClientIdentity {
     client.on('transfer', this.onTransfer)
   }
 
+  /**
+   * 26.1+ servers use `player_input` (forward/backward/left/right/jump/shift/
+   * sprint bitflags) for movement prediction. mineflayer only sends it for
+   * sneak, so the server believes every jump/step-up is unrequested motion and
+   * sets the player back. Send the full input state when it changes, before
+   * mineflayer writes the position.
+   */
+  setupPlayerInput () {
+    this.lastPlayerInput = null
+    this.onPlayerInputTick = () => {
+      if (this.stopped || !this.enabled) return
+      if (!this.configured) this.resolveVersion()
+      if (!this.hasPlayerInput) return
+      const client = this.bot._client
+      if (client.state !== 'play') return
+      const control = key => {
+        try {
+          return Boolean(this.bot.getControlState?.(key))
+        } catch {
+          return false
+        }
+      }
+      const inputs = {
+        forward: control('forward'),
+        backward: control('back'),
+        left: control('left'),
+        right: control('right'),
+        jump: control('jump'),
+        shift: control('sneak'),
+        sprint: control('sprint')
+      }
+      const fingerprint = JSON.stringify(inputs)
+      // Vanilla sends Player Input when the input state changes, not every
+      // tick; repeating it every tick makes strict servers predict a new jump
+      // each tick and set the player back.
+      if (fingerprint === this.lastPlayerInput) return
+      this.lastPlayerInput = fingerprint
+      try {
+        client.write('player_input', { inputs })
+      } catch (err) {
+        this.logger.debug(`client: player_input write failed: ${err.message}`)
+      }
+    }
+    this.bot.on('physicsTick', this.onPlayerInputTick)
+  }
+
   setupTickEnd () {
-    // Exactly one tick_end per engine tick, aligned with mineflayer's own 50 ms
-    // physics loop so no server tick ever sees a second position packet.
+    // Vanilla ends each client tick with client_tick_end *after* that tick's
+    // movement packet. mineflayer emits physicsTick before it simulates and
+    // writes the position, so writing immediately sends tick_end first and
+    // makes every movement packet look one tick late (Grim sets the player
+    // back). Defer past the synchronous tick body so the order is
+    // position/look, then tick_end.
     // Version support is resolved on the first tick, after auto-version has
     // settled.
     this.onPhysicsTick = () => {
@@ -472,13 +527,19 @@ export class ClientIdentity {
       if (!this.hasTickEnd) return
       const client = this.bot._client
       if (client.state !== 'play') return
-      try {
-        client.write('tick_end', {})
-      } catch (err) {
-        this.logger.debug(`client: tick_end write failed: ${err.message}`)
-      }
+      setImmediate(() => this.writeTickEnd(client))
     }
     this.bot.on('physicsTick', this.onPhysicsTick)
+  }
+
+  writeTickEnd (client = this.bot._client) {
+    if (this.stopped || !this.enabled) return
+    if (!client || client.state !== 'play') return
+    try {
+      client.write('tick_end', {})
+    } catch (err) {
+      this.logger.debug(`client: tick_end write failed: ${err.message}`)
+    }
   }
 
   setupKnownPacks () {
@@ -519,6 +580,7 @@ export class ClientIdentity {
     if (this.onTransfer) this.bot._client?.removeListener('transfer', this.onTransfer)
     if (this.onPlayLogin) this.bot._client?.removeListener('login', this.onPlayLogin)
     if (this.onPhysicsTick) this.bot.removeListener('physicsTick', this.onPhysicsTick)
+    if (this.onPlayerInputTick) this.bot.removeListener('physicsTick', this.onPlayerInputTick)
     if (this.onKnownPacks) this.bot._client?.removeListener('select_known_packs', this.onKnownPacks)
     clearInterval(this.vehicleTimer)
     this.vehicleTimer = null

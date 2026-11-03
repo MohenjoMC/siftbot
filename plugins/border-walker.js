@@ -88,6 +88,30 @@ export default function create (ctx) {
     }
   })
 
+  ctx.registerCommand('diag', {
+    usage: '.diag',
+    description: 'Report blocks around the walker',
+    run: () => {
+      const bot = ctx.bot
+      if (!bot?.entity) return ctx.log('diag: not connected')
+      const p = bot.entity.position
+      const yaw = bot.entity.yaw
+      const fx = -Math.sin(yaw)
+      const fz = -Math.cos(yaw)
+      const at = (dx, dy, dz) => {
+        const block = bot.blockAt(p.offset(dx, dy, dz))
+        return block ? `${block.name}${block.boundingBox === 'block' ? '' : '(open)'}` : 'unloaded'
+      }
+      ctx.log(`diag: pos ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} onGround=${bot.entity.onGround} water=${bot.entity.isInWater} lava=${bot.entity.isInLava} yaw=${yaw.toFixed(2)} yawDeg=${(yaw*180/Math.PI).toFixed(0)}`)
+      ctx.log(`diag: feet=${at(0,0,0)} head=${at(0,1,0)} below=${at(0,-1,0)} ahead1=${at(fx,0,fz)} ahead1up=${at(fx,1,fz)} ahead1down=${at(fx,-1,fz)} ahead2=${at(fx*2,0,fz*2)} ahead2down=${at(fx*2,-1,fz*2)}`)
+      ctx.log(`diag: controls fwd=${bot.getControlState?.('forward')} jump=${bot.getControlState?.('jump')} sneak=${bot.getControlState?.('sneak')} sprint=${bot.getControlState?.('sprint')}`)
+      ctx.log(`diag: physics=${bot.physicsEnabled} state=${bot._client.state} entity=${bot.entity ? 'yes' : 'no'} shouldUsePhysics=${bot.physics?.shouldUsePhysics}`)
+      const path0 = run?.path?.[0]
+      ctx.log(`diag: walk=${run ? run.status : 'idle'} path=${run?.path?.length ?? 0} wp=${path0 ? `${path0.x},${path0.y},${path0.z}` : '-'} heading=${run?.heading?.toFixed?.(2) ?? '-'} yaw=${bot.entity.yaw.toFixed(2)}`)
+      ctx.log(`diag: game=${bot.game?.gameMode} vehicle=${bot.vehicle ? bot.vehicle.name : 'none'} passenger=${bot.entity.passenger ?? false} sleeping=${bot.isSleeping} health=${bot.health} food=${bot.food} window=${bot.currentWindow ? bot.currentWindow.type : 'none'}`)
+    }
+  })
+
   ctx.registerCommand('border-status', {
     usage: '.border-status',
     description: 'Show the border walk progress',
@@ -123,6 +147,13 @@ export default function create (ctx) {
     if (!run) return
     run.status = status
     writeProgress()
+    if (run.restoreSneak) {
+      try {
+        ctx.runtime?.session?.sneak?.setEnabled(true)
+      } catch {
+        // Session already gone.
+      }
+    }
     try {
       ctx.actions.stop()
       ctx.bot.setControlState('sprint', false)
@@ -165,9 +196,26 @@ export default function create (ctx) {
       lastMoveAt: Date.now(),
       lastWriteAt: 0,
       lastTrailAt: 0,
+      path: [],
+      lastPlanAt: 0,
+      tickPos: position.clone(),
+      blockedTicks: 0,
       strafe: 1,
       lastJumpAt: 0
     }
+
+    // Held sneak caps movement and blocks step-ups; release it for the walk.
+    const sneak = ctx.runtime?.session?.sneak
+    if (sneak?.enabled) {
+      try {
+        sneak.setEnabled(false)
+        run.restoreSneak = true
+        ctx.log('border-walker: released held sneak for walking')
+      } catch {
+        // Feature unavailable.
+      }
+    }
+    try { bot.setControlState('sneak', false) } catch {}
 
     ctx.log(`border-walker: walking to the ${target.corner} corner (${target.x}, ${target.z})`)
     writeProgress()
@@ -193,14 +241,54 @@ export default function create (ctx) {
           if (!run) break
         }
 
-        await bot.look(Math.atan2(-dx, -dz), 0, true)
+        const targetYaw = Math.atan2(-dx, -dz)
+        if (!run.path || run.path.length === 0 || Date.now() - run.lastPlanAt > 1500) {
+          run.path = planPath(bot, dx, dz)
+          run.lastPlanAt = Date.now()
+        }
+        let heading = targetYaw
+        let stepUp = false
+        if (run.path && run.path.length > 0) {
+          const waypoint = run.path[0]
+          const wdx = waypoint.x + 0.5 - current.x
+          const wdz = waypoint.z + 0.5 - current.z
+          if (Math.hypot(wdx, wdz) < 0.7) {
+            run.path.shift()
+          } else {
+            heading = Math.atan2(-wdx, -wdz)
+            stepUp = waypoint.y > current.y + 0.4
+          }
+        }
+        run.heading = heading
+        await bot.look(heading, 0, true)
         if (run.eating) {
           await sleep(150)
           continue
         }
 
         bot.setControlState('forward', true)
-        bot.setControlState('sprint', bot.food > 6 && distance > 64)
+        bot.setControlState('sprint', false)
+        try { if (bot.getControlState?.('sneak')) bot.setControlState('sneak', false) } catch {}
+
+        // Auto-jump: hop up a single step, or swim when in water.
+        const fx = -Math.sin(heading)
+        const fz = -Math.cos(heading)
+        const feetAhead = solidAt(bot, fx, 0, fz)
+        const headAhead = solidAt(bot, fx, 1, fz)
+        if (bot.entity.isInWater || stepUp || (feetAhead && !headAhead)) {
+          if (bot.entity.onGround || bot.entity.isInWater) {
+            bot.setControlState('jump', true)
+            setTimeout(() => {
+              try { bot.setControlState('jump', false) } catch {}
+            }, 60)
+          }
+        }
+
+        const tick = current.distanceTo(run.tickPos ?? current)
+        run.tickPos = current.clone()
+        const pressing = Boolean(bot.getControlState?.('forward'))
+        if (pressing && tick < 0.02) run.blockedTicks = (run.blockedTicks ?? 0) + 1
+        else if (tick > 0.05) run.blockedTicks = 0
 
         const moved = current.distanceTo(run.lastPos)
         if (moved > 0.8) {
@@ -208,7 +296,7 @@ export default function create (ctx) {
           run.lastPos = current.clone()
           run.lastPosAt = Date.now()
           run.lastMoveAt = Date.now()
-          run.sprinting = bot.food > 6 && distance > 64
+          run.sprinting = false
         } else if (Date.now() - run.lastMoveAt > 1200 && bot.entity.onGround &&
           Date.now() - run.lastJumpAt > 600) {
           run.lastJumpAt = Date.now()
@@ -219,21 +307,79 @@ export default function create (ctx) {
             } catch {
               // Disconnected.
             }
-          }, 160)
+          }, 60)
         }
 
-        if (Date.now() - run.lastMoveAt > 4000) {
-          // Blocked: sidestep, alternating sides, then keep pushing forward.
+        // Pressing into a wall makes strict servers set the player back; turn
+        // to a clear heading instead of shoving the obstacle.
+        if ((run.blockedTicks ?? 0) >= 3) {
+          run.blockedTicks = 0
+          run.path = []
+          run.lastPlanAt = 0
+          try { bot.setControlState('forward', false) } catch {}
+          const avoid = chooseHeading(bot, targetYaw)
+          run.heading = avoid
+          await bot.look(avoid, 0, true)
+          bot.setControlState('forward', true)
+          await sleep(300)
+          bot.setControlState('jump', true)
+          await sleep(60)
+          try { bot.setControlState('jump', false) } catch {}
+        }
+
+        if (Date.now() - run.lastMoveAt > 3500) {
+          run.stuck = (run.stuck ?? 0) + 1
           bot.setControlState('forward', false)
-          const key = run.strafe > 0 ? 'left' : 'right'
-          bot.setControlState(key, true)
-          await sleep(650)
-          try {
-            bot.setControlState(key, false)
-          } catch {
-            // Disconnected.
+          bot.setControlState('sprint', false)
+          const mode = run.stuck % 3
+          if (mode === 1) {
+            // Jump and slide sideways along the obstacle.
+            const key = run.strafe > 0 ? 'left' : 'right'
+            bot.setControlState(key, true)
+            bot.setControlState('jump', true)
+            await sleep(60)
+            try { bot.setControlState('jump', false) } catch {}
+            await sleep(840)
+            try {
+              bot.setControlState(key, false)
+            } catch {
+              // Disconnected.
+            }
+            run.strafe = -run.strafe
+          } else if (mode === 2) {
+            // Back off, then take a new heading before pushing on.
+            bot.setControlState('back', true)
+            await sleep(600)
+            try { bot.setControlState('back', false) } catch {}
+            await bot.look(bot.entity.yaw + (run.strafe > 0 ? 0.8 : -0.8), 0, true)
+            bot.setControlState('forward', true)
+            bot.setControlState('jump', true)
+            await sleep(60)
+            try { bot.setControlState('jump', false) } catch {}
+            await sleep(740)
+            try {
+              bot.setControlState('forward', false)
+            } catch {}
+            run.strafe = -run.strafe
+          } else {
+            // Last resort: punch the block in front (dirt, wood, leaves).
+            try {
+              const position = bot.entity.position
+              const forwardX = -Math.sin(bot.entity.yaw)
+              const forwardZ = -Math.cos(bot.entity.yaw)
+              for (const height of [1, 0]) {
+                const block = bot.blockAt(position.offset(forwardX * 1.2, height, forwardZ * 1.2))
+                if (block && block.boundingBox === 'block' && !/bedrock|obsidian|water|lava/.test(block.name)) {
+                  ctx.log(`border-walker: clearing ${block.name}`)
+                  await bot.dig(block)
+                  break
+                }
+              }
+            } catch {
+              // Not diggable; keep walking.
+            }
           }
-          run.strafe = -run.strafe
+          ctx.log(`border-walker: unstick ${run.stuck} (${mode === 1 ? 'sidestep' : mode === 2 ? 'turn' : 'dig'})`)
           run.lastMoveAt = Date.now()
           run.lastPos = bot.entity.position.clone()
         }
@@ -294,6 +440,157 @@ export default function create (ctx) {
     }
     return true
   }
+}
+
+function blockAt (bot, x, y, z) {
+  const target = bot.entity.position.clone()
+  target.set(x, y, z)
+  return bot.blockAt(target)
+}
+
+/** Standing height for a column, or null when it cannot be stood on. */
+function standHeight (bot, x, z, baseY) {
+  let solidY = null
+  for (let y = baseY + 2; y >= baseY - 4; y--) {
+    const block = blockAt(bot, x, y, z)
+    if (!block) return null
+    if (block.boundingBox === 'block') {
+      solidY = y
+      break
+    }
+  }
+  if (solidY == null) return null
+  const feet = blockAt(bot, x, solidY + 1, z)
+  const head = blockAt(bot, x, solidY + 2, z)
+  if (!feet || !head) return null
+  if (feet.boundingBox === 'block' || head.boundingBox === 'block') return null
+  return {
+    x,
+    z,
+    y: solidY + 1,
+    water: feet.name === 'water' || head.name === 'water'
+  }
+}
+
+/**
+ * Small A* over a local height map. Returns waypoints toward the target
+ * direction, stepping up one block, dropping up to three, avoiding walls.
+ */
+function planPath (bot, goalDx, goalDz, radius = 20) {
+  const position = bot.entity.position
+  const bx = Math.floor(position.x)
+  const bz = Math.floor(position.z)
+  const baseY = Math.floor(position.y)
+  const length = Math.hypot(goalDx, goalDz) || 1
+  const dirX = goalDx / length
+  const dirZ = goalDz / length
+
+  const nodes = new Map()
+  const key = (x, z) => `${x},${z}`
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dz = -radius; dz <= radius; dz++) {
+      const cell = standHeight(bot, bx + dx, bz + dz, baseY)
+      if (cell) nodes.set(key(cell.x, cell.z), cell)
+    }
+  }
+
+  const start = nodes.get(key(bx, bz)) ?? nodes.get(key(bx, bz + 1)) ?? nodes.get(key(bx, bz - 1))
+  if (!start) return []
+
+  const goalX = bx + Math.round(dirX * radius)
+  const goalZ = bz + Math.round(dirZ * radius)
+  const goalKey = key(goalX, goalZ)
+  const heuristic = cell => Math.hypot(goalX - cell.x, goalZ - cell.z)
+
+  const open = [{ ...start, g: 0, f: heuristic(start), parent: null }]
+  const seen = new Map()
+  let best = null
+
+  while (open.length > 0) {
+    open.sort((a, b) => a.f - b.f)
+    const current = open.shift()
+    const currentKey = key(current.x, current.z)
+    if (seen.has(currentKey) && seen.get(currentKey) <= current.g) continue
+    seen.set(currentKey, current.g)
+
+    if (!best || heuristic(current) < heuristic(best)) best = current
+    if (currentKey === goalKey) { best = current; break }
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue
+        const next = nodes.get(key(current.x + dx, current.z + dz))
+        if (!next) continue
+        if (next.y - current.y > 1) continue // cannot climb more than one
+        if (current.y - next.y > 3) continue // too deep a fall
+        if (dx !== 0 && dz !== 0) {
+          // Never cut a corner: both orthogonal neighbours must be walkable at
+          // the same height, and a diagonal never climbs.
+          const sideA = nodes.get(key(current.x + dx, current.z))
+          const sideB = nodes.get(key(current.x, current.z + dz))
+          if (!sideA || !sideB) continue
+          if (sideA.y !== current.y || sideB.y !== current.y) continue
+          if (next.y !== current.y) continue
+        }
+        const cost = current.g + (dx !== 0 && dz !== 0 ? 1.414 : 1) + (next.water ? 3 : 0)
+        const nextKey = key(next.x, next.z)
+        if (seen.has(nextKey) && seen.get(nextKey) <= cost) continue
+        open.push({ ...next, g: cost, f: cost + heuristic(next), parent: current })
+      }
+    }
+  }
+
+  if (!best) return []
+  const path = []
+  let cursor = best
+  while (cursor && cursor.parent) {
+    path.push({ x: cursor.x, z: cursor.z, y: cursor.y })
+    cursor = cursor.parent
+  }
+  path.reverse()
+  return path.slice(0, 16)
+}
+
+function solidAt (bot, dx, dy, dz) {
+  const position = bot.entity.position
+  const block = bot.blockAt(position.offset(dx, dy, dz))
+  return block ? block.boundingBox === 'block' : true
+}
+
+/**
+ * Pick a heading close to the target while avoiding walls, drops and water.
+ * Samples one and two blocks ahead for several candidate angles.
+ */
+function chooseHeading (bot, targetYaw) {
+  const offsets = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6]
+  let best = targetYaw
+  let bestScore = Infinity
+  for (const offset of offsets) {
+    const yaw = targetYaw + offset
+    const fx = -Math.sin(yaw)
+    const fz = -Math.cos(yaw)
+    let score = Math.abs(offset) * 4
+
+    const feet1 = solidAt(bot, fx, 0, fz)
+    const head1 = solidAt(bot, fx, 1, fz)
+    const below1 = solidAt(bot, fx, -1, fz)
+    const feet2 = solidAt(bot, fx * 2, 0, fz * 2)
+    const below2 = solidAt(bot, fx * 2, -1, fz * 2)
+
+    if (head1) score += 30 // head-height obstacle (leaves, low ceiling)
+    if (feet1 && !head1) score += 3 // step up, jumpable
+    if (!feet1 && !below1) score += 25 // drop immediately ahead
+    if (!feet2 && !below2) score += 10 // drop two ahead
+    if (!feet1 && below1) {
+      const block = bot.blockAt(bot.entity.position.offset(fx, -1, fz))
+      if (block && /water|lava/.test(block.name)) score += block.name === 'water' ? 8 : 60
+    }
+    if (score < bestScore) {
+      bestScore = score
+      best = yaw
+    }
+  }
+  return best
 }
 
 function formatEta (seconds) {

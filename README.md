@@ -9,7 +9,7 @@ An AFK Minecraft bot built on [mineflayer](https://github.com/PrismarineJS/minef
 - **Vanilla client presentation** announces the bot the way the official client does — a vanilla brand in the configuration phase, identical settings packets in both phases, answers to every known-packs negotiation, and `client_tick_end` every physics tick on 1.21.2+, which strict anticheats and 26.x servers expect.
 - **Passes Sonar verification** — the popular anti-bot plugin's default checks (vanilla physics, protocol probes, boat/minecart packets, proxy transfer) are matched client-side, so the bot gets through on servers where automation is allowed.
 - **Plugins with hot reload** — drop an ES module into `plugins/` and give every bot new behaviour: move, look, equip, read chests, add console commands, react to chat and events. Save the file and running bots rebind without a restart.
-- **Border walker and live dashboard** — walks and sprints to a world-border corner, eats and reports progress every two seconds to a shadcn/ui telemetry page.
+- **Border walker and live dashboard** — walks, pathfinds and jumps to a world-border corner, eats and reports progress four times a second to a shadcn/ui telemetry page.
 - **Live console** shows chat, whispers, system messages, and lets you type commands or chat in real time.
 - **Automatic reconnect** with exponential backoff, plus optional startup commands for `/login` or `/register`.
 - **Password manager** — saved passwords (JSON, mode 0600, hand-editable) are remembered from `/register` or `/login` commands the bot sends, and the bot answers the server's login prompt automatically on every reconnect.
@@ -365,7 +365,7 @@ The bundled `border-walker` plugin drives long overland expeditions:
 .border-stop
 ```
 
-It walks and sprints toward the target (1,000 blocks inside a 40,000 border by default), jumps and sidesteps when stuck, releases sprint while eating, and eats from the inventory whenever food drops to 17 or below. The live snapshot is rewritten four times a second in `SIFT_PROGRESS_FILE` (default `./border-progress.json`): position, remaining distance, speed, ETA, health/food and sprint/eat state. Trail points for the chart are sampled every two seconds.
+It pathfinds with a local A* over scanned terrain, avoiding walls and drops, auto-jumps one-block steps with a single-tick jump pulse, digs or sidesteps when stuck, and eats from the inventory whenever food drops to 17 or below. It walks (it does not sprint): on strict 1.21.3+/26.x servers, sprint-jumping makes the server's movement prediction disagree and the player is set back, while walking with single-tick jumps is accepted. The live snapshot is rewritten four times a second in `SIFT_PROGRESS_FILE` (default `./border-progress.json`): position, remaining distance, speed, ETA, health/food and sprint/eat state. Trail points for the chart are sampled every two seconds.
 
 `web/` is the live dashboard — Vite + React + shadcn/ui, polling `/progress` every two seconds:
 

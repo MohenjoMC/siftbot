@@ -127,12 +127,13 @@ test('client identity: legacy versions (≤1.20.1) keep the play-state brand', (
   assert.equal(brandPayloads[0].channel, 'MC|Brand')
 })
 
-test('client identity: tick_end follows every physics tick on protocol ≥ 767', () => {
+test('client identity: tick_end follows every physics tick on protocol ≥ 767', async () => {
   const bot = makeBot(775)
   new ClientIdentity(bot, { enabled: true, brand: 'vanilla' }, silentLogger)
 
   bot.emit('physicsTick')
   bot.emit('physicsTick')
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(writesTowards(bot._client, 'tick_end').length, 2)
 })
 
@@ -187,7 +188,7 @@ test('client identity: disabled feature does not write or suppress anything', ()
   }])
 })
 
-test('client identity: defers version checks until auto-version has resolved', () => {
+test('client identity: defers version checks until auto-version has resolved', async () => {
   // Exactly the production shape: mineflayer.createBot() returns before the
   // server ping has resolved the protocol, so protocolVersion/supportFeature
   // are unavailable at construction time.
@@ -209,9 +210,11 @@ test('client identity: defers version checks until auto-version has resolved', (
   assert.equal(brandPayloads.length, 1)
   assert.equal(brandPayloads[0].channel, 'minecraft:brand')
 
-  // And tick_end now activates on the following physics ticks.
+  // And tick_end now activates on the following physics ticks (written just
+  // after the tick body, like vanilla).
   bot._client.state = 'play'
   bot.emit('physicsTick')
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(writesTowards(bot._client, 'tick_end').length, 1)
   assert.equal(identity.hasTickEnd, true)
 })
