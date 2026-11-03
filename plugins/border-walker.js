@@ -61,6 +61,7 @@ export function buildProgress (state, now = Date.now()) {
 
 export default function create (ctx) {
   let run = null
+  let lastExpedition = null
   const progressFile = process.env.SIFT_PROGRESS_FILE || path.join(process.cwd(), 'border-progress.json')
   const border = Number(process.env.SIFT_BORDER) || 40000
   const margin = Number(process.env.SIFT_BORDER_MARGIN) || 1000
@@ -71,6 +72,49 @@ export default function create (ctx) {
   ctx.on('end', () => {
     if (run) finish('disconnected')
   })
+
+  // Seed the last expedition so an idle heartbeat can keep the dashboard
+  // showing the live position instead of a frozen file after a restart.
+  try {
+    const existing = JSON.parse(fs.readFileSync(progressFile, 'utf8'))
+    if (Number.isFinite(existing?.target?.x) && Number.isFinite(existing?.target?.z)) {
+      lastExpedition = {
+        corner: existing.corner ?? 'custom',
+        target: { x: existing.target.x, z: existing.target.z },
+        startedAt: existing.startedAt ? Date.parse(existing.startedAt) : Date.now(),
+        travelled: existing.travelled ?? 0,
+        trail: Array.isArray(existing.trail) ? existing.trail : []
+      }
+    }
+  } catch {
+    // No previous run yet.
+  }
+
+  // While connected but idle, refresh the snapshot once a second so the page
+  // stays live and shows the bot's real position.
+  const heartbeat = setInterval(() => {
+    if (run || !ctx.connected || !lastExpedition) return
+    const bot = ctx.bot
+    if (!bot?.entity) return
+    const position = bot.entity.position
+    writePayload(buildProgress({
+      corner: lastExpedition.corner,
+      target: lastExpedition.target,
+      username: bot.username,
+      server: `${ctx.config.host}:${ctx.config.port}`,
+      position: { x: position.x, y: position.y, z: position.z },
+      travelled: lastExpedition.travelled,
+      speed: 0,
+      health: bot.health,
+      food: bot.food,
+      sprinting: false,
+      eating: false,
+      status: 'idle',
+      startedAt: lastExpedition.startedAt,
+      trail: lastExpedition.trail
+    }, Date.now()))
+  }, 1000)
+  heartbeat.unref?.()
 
   ctx.registerCommand('border-walk', {
     usage: '.border-walk [ne|nw|se|sw|x,z]',
@@ -130,10 +174,8 @@ export default function create (ctx) {
     return buildProgress({ ...run, position, health: bot.health, food: bot.food }, Date.now())
   }
 
-  function writeProgress () {
-    if (!run) return
+  function writePayload (payload) {
     try {
-      const payload = snapshot()
       fs.mkdirSync(path.dirname(progressFile), { recursive: true })
       const tmp = `${progressFile}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n')
@@ -141,6 +183,11 @@ export default function create (ctx) {
     } catch (err) {
       ctx.debug(`border-walker: cannot write progress: ${err.message}`)
     }
+  }
+
+  function writeProgress () {
+    if (!run) return
+    writePayload(snapshot())
   }
 
   function finish (status) {
@@ -159,6 +206,13 @@ export default function create (ctx) {
       ctx.bot.setControlState('sprint', false)
     } catch {
       // Disconnected.
+    }
+    lastExpedition = {
+      corner: run.corner,
+      target: { x: run.target.x, z: run.target.z },
+      startedAt: run.startedAt,
+      travelled: run.travelled,
+      trail: run.trail.slice(-200)
     }
     ctx.log(`border-walker: ${status}`)
     run = null
