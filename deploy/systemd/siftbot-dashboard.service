@@ -1,0 +1,15 @@
+[Unit]
+Description=siftbot border expedition dashboard
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/.t3/projects/siftbot/web
+Environment=SIFT_PROGRESS_FILE=%h/silfmc-live/border-progress.json
+Environment=HOST=0.0.0.0
+Environment=PORT=8790
+ExecStart=/usr/local/bin/node %h/.t3/projects/siftbot/web/server.mjs
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -101,3 +101,9 @@ support the 26.x protocol yet. `.tree` skips the `/rtp` step.
 through to the random-teleport entry) and `.border [tries]` (repeats RTP and
 scores each landing against the 40k border). Labels are matched with small-caps
 folding, so "ʜᴏᴍᴇs & ᴛᴇʟᴇᴘᴏʀᴛs" matches `homes`.
+
+`plugins/border-walker.js` adds `.border-walk [ne|nw|se|sw|x,z]`, `.border-status`
+and `.border-stop`: it walks and sprints to a border corner, jumping and
+sidestepping when stuck and eating from the inventory when food runs low. Every
+two seconds it writes a JSON snapshot (position, distance, speed, ETA, vitals,
+trail) to `SIFT_PROGRESS_FILE` for the `web/` dashboard.

@@ -56,9 +56,62 @@ export default function create (ctx) {
     }
   })
 
+  ctx.registerCommand('use', {
+    usage: '.use',
+    description: 'Right-click with the held item (open menus)',
+    run: (args, c) => c.bot.activateItem()
+  })
+
+  ctx.registerCommand('click', {
+    usage: '.click <slot>',
+    description: 'Click a slot in the open menu',
+    run: (args, c) => {
+      const slot = Number(args[0])
+      if (!Number.isInteger(slot)) throw new Error('Usage: .click <slot>')
+      return c.bot.clickWindow(slot, 0, 0)
+    }
+  })
+
+  ctx.registerCommand('window', {
+    usage: '.window',
+    description: 'List the open container/menu slots',
+    run: (args, c) => {
+      const window = c.bot.currentWindow
+      if (!window) {
+        c.log('no window is open')
+        return
+      }
+      c.log(`window ${window.type} — ${window.slots.length} slots`)
+      window.slots.forEach((item, slot) => {
+        if (!item) return
+        let label = ''
+        if (item.customName) label = componentText(item.customName)
+        c.log(`  ${slot}: ${item.name} x${item.count}${label ? ` — ${label}` : ''}`)
+      })
+    }
+  })
+
   return {
     unload () {
       ctx.debug('[example] unloaded')
     }
   }
+}
+
+/** Flatten a 1.20.5+ NBT text component (type/value wrappers) to plain text. */
+function componentText (node) {
+  const out = []
+  const visit = n => {
+    if (n == null) return
+    if (typeof n === 'string') { out.push(n); return }
+    if (Array.isArray(n)) { n.forEach(visit); return }
+    if (typeof n !== 'object') return
+    if (typeof n.text === 'string') out.push(n.text)
+    else if (n.text && typeof n.text === 'object') visit(n.text)
+    if (typeof n.value === 'string') out.push(n.value)
+    else if (n.value && typeof n.value === 'object') visit(n.value)
+    if (n.extra) visit(n.extra)
+  }
+  visit(node)
+  return out.join('')
 }

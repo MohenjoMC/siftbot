@@ -9,6 +9,7 @@ An AFK Minecraft bot built on [mineflayer](https://github.com/PrismarineJS/minef
 - **Vanilla client presentation** announces the bot the way the official client does — a vanilla brand in the configuration phase, identical settings packets in both phases, answers to every known-packs negotiation, and `client_tick_end` every physics tick on 1.21.2+, which strict anticheats and 26.x servers expect.
 - **Passes Sonar verification** — the popular anti-bot plugin's default checks (vanilla physics, protocol probes, boat/minecart packets, proxy transfer) are matched client-side, so the bot gets through on servers where automation is allowed.
 - **Plugins with hot reload** — drop an ES module into `plugins/` and give every bot new behaviour: move, look, equip, read chests, add console commands, react to chat and events. Save the file and running bots rebind without a restart.
+- **Border walker and live dashboard** — walks and sprints to a world-border corner, eats and reports progress every two seconds to a shadcn/ui telemetry page.
 - **Live console** shows chat, whispers, system messages, and lets you type commands or chat in real time.
 - **Automatic reconnect** with exponential backoff, plus optional startup commands for `/login` or `/register`.
 - **Password manager** — saved passwords (JSON, mode 0600, hand-editable) are remembered from `/register` or `/login` commands the bot sends, and the bot answers the server's login prompt automatically on every reconnect.
@@ -354,6 +355,34 @@ with the project: `example.js` (`.where`, `.chest`, `.step`) and
 a crafting table). Plugins are trusted code executed in-process: only install
 ones you have read.
 
+## Border walker and live dashboard
+
+The bundled `border-walker` plugin drives long overland expeditions:
+
+```
+.border-walk ne        # or nw / se / sw, or "39000,-39000"
+.border-status
+.border-stop
+```
+
+It walks and sprints toward the target (1,000 blocks inside a 40,000 border by default), jumps and sidesteps when stuck, releases sprint while eating, and eats from the inventory whenever food drops to 17 or below. Progress is written to `SIFT_PROGRESS_FILE` (default `./border-progress.json`) every two seconds: position, remaining distance, speed, ETA, health/food, sprint/eat state, and a trail for charting.
+
+`web/` is the live dashboard — Vite + React + shadcn/ui, polling `/progress` every two seconds:
+
+```bash
+cd web && bun install && bun run build
+SIFT_PROGRESS_FILE=/path/to/border-progress.json PORT=8790 node web/server.mjs
+# open http://127.0.0.1:8790
+```
+
+For boot-time hosting, `deploy/systemd/siftbot-dashboard.service` runs the built dashboard and `deploy/systemd/siftbot-ui.service` exports the same progress file:
+
+```bash
+systemctl --user enable --now siftbot-dashboard
+```
+
+No progress file yet? The page explains which command starts a walk.
+
 ## Anti-bot compatibility (Sonar)
 
 siftbot speaks the vanilla client's full handshake and session cadence, which is enough to pass the standard verification used by [Sonar](https://github.com/jonesdevelopment/sonar) — the anti-bot plugin found on many public servers. Tested against **Sonar 2.1.53** on Paper 26.1.2 with its default configuration:
@@ -433,6 +462,7 @@ Set `SIFTBOT_SOCKS=127.0.0.1:9050` to send the Minecraft connection through a SO
 | `src/features/auth.js` | Captures register/login passwords and answers the server's login prompt. |
 | `src/plugins/manager.js` | Plugin discovery, per-session binding, hot reload and cleanup. |
 | `src/plugins/context.js` | The plugin API: actions, inventory, containers, commands, events/timers. |
+| `web/` | Vite + React + shadcn/ui expedition dashboard, plus the telemetry server. |
 | `src/socks5.js` | Optional SOCKS5 egress (`SIFTBOT_SOCKS`) for testing without the local address. |
 | `src/features/auto-eat.js` | Hunger checks, food choice, equip/consume, held-item restore. |
 | `src/features/sneak.js` | Held shift, spawn re-application, watchdog. |
