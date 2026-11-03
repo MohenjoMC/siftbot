@@ -171,9 +171,11 @@ export default function create (ctx) {
           if (recent.length > 0) {
             context.log(`border-hunter: recent messages: ${recent.join(' | ').slice(0, 300)}`)
           }
-          if (cooldown && attempt < tries) {
-            context.log('border-hunter: waiting 30s for the cooldown…')
-            await sleep(30000)
+          // This server's RTP is on a ~5 minute cooldown: wait it out.
+          if (attempt < tries) {
+            const waitMs = cooldown ? 30000 : 305000
+            context.log(`border-hunter: waiting ${Math.round(waitMs / 1000)}s for the RTP cooldown…`)
+            await sleep(waitMs)
             continue
           }
           break
@@ -195,6 +197,11 @@ export default function create (ctx) {
         if (spot.inWindow && spot.safeGround && spot.goodBiome) {
           context.log(`border-hunter: found it — ${spot.x.toFixed(0)}, ${spot.z.toFixed(0)}`)
           return
+        }
+
+        if (attempt < tries) {
+          context.log('border-hunter: waiting 305s for the RTP cooldown…')
+          await sleep(305000)
         }
       }
 
@@ -220,19 +227,57 @@ export default function create (ctx) {
 
   async function runRtp (context) {
     const bot = context.bot
+
+    if (bot.currentWindow) {
+      try {
+        await bot.closeWindow(bot.currentWindow)
+      } catch {
+        // Already closed.
+      }
+      await sleep(300)
+    }
+
     const before = bot.entity.position.clone()
 
-    // 1) plain command, if this server exposes one
+    // 1) /rtp usually opens the RTP menu directly on this server
     context.chat('/rtp')
-    await sleep(3000)
-    if (before.distanceTo(bot.entity.position) > 16) return true
+    let menu = await waitForWindow(context, 3500)
+    if (menu) {
+      context.log(`rtp: opened "${menuLabel(menu)}"`)
+      let slot = findSlot(menu, /^rtp\b|random\s*(?:teleport|tp)|wilderness|wild/)
+      if (slot >= 0) {
+        context.log(`rtp: clicking "${slotName(menu, slot)}"`)
+        menu = await clickSlotAndWait(context, slot)
+        if (menu) {
+          const world = findSlot(menu, /overworld|survival|world|confirm|accept|teleport/)
+          if (world >= 0) {
+            context.log(`rtp: choosing "${slotName(menu, world)}"`)
+            await bot.clickWindow(world, 0, 0)
+          }
+        }
+        if (await waitForMove(context, before, 12000)) return true
+        context.log('rtp: menu clicked but no teleport happened')
+        return false
+      }
 
-    // 2) drive the held menu item instead
-    let menu = await openMenu(context)
-    if (!menu) return false
+      const fallback = findSlot(menu, /overworld|survival|world/)
+      if (fallback >= 0) {
+        context.log(`rtp: clicking "${slotName(menu, fallback)}"`)
+        await bot.clickWindow(fallback, 0, 0)
+        if (await waitForMove(context, before, 12000)) return true
+      }
+      logMenu(context, menu)
+      return false
+    }
 
-    let slot = findSlot(menu, /homes?.*teleports?|teleports?|warps?/)
-    if (slot < 0) slot = findSlot(menu, /random|rtp|wild/)
+    // 2) no menu from the command: fall back to the held menu item
+    menu = await openMenu(context)
+    if (!menu) {
+      return waitForMove(context, before, 3000)
+    }
+
+    let slot = findSlot(menu, /^rtp\b|random\s*(?:teleport|tp)|wilderness|wild/)
+    if (slot < 0) slot = findSlot(menu, /homes?.*teleports?|teleports?|warps?/)
     if (slot < 0) {
       context.log('rtp: the menu has no teleport entry')
       logMenu(context, menu)
@@ -243,8 +288,8 @@ export default function create (ctx) {
     menu = await clickSlotAndWait(context, slot)
     if (!menu) return false
 
-    slot = findSlot(menu, /random\s*(?:teleport|tp)|rtp|wilderness|wild/)
-    if (slot < 0) slot = findSlot(menu, /teleport|\btp\b/)
+    slot = findSlot(menu, /^rtp\b|random\s*(?:teleport|tp)|wilderness|wild/)
+    if (slot < 0) slot = findSlot(menu, /teleport|\btp\b|overworld|survival/)
     if (slot < 0) {
       context.log(`rtp: no RTP entry on "${menuLabel(menu)}"`)
       logMenu(context, menu)
