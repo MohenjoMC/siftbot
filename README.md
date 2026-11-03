@@ -375,6 +375,19 @@ SIFT_PROGRESS_FILE=/path/to/border-progress.json PORT=8790 node web/server.mjs
 # open http://127.0.0.1:8790
 ```
 
+### Web control room
+
+The page is also the control surface: a bot sidebar with start/stop/restart/reconnect, an add/edit/delete form, a live console (chat, `/commands`, `.commands`), the expedition telemetry, and the in-game GUI mirror. It talks to the authenticated API daemon through the dashboard server, which proxies `/api/*` and injects the token — the browser never sees it.
+
+Run the daemon (it owns `instances.json`) plus the dashboard:
+
+```bash
+systemctl --user disable --now siftbot-ui   # the TUI and daemon cannot share instances.json
+systemctl --user enable --now siftbot siftbot-dashboard
+```
+
+Units live in `deploy/systemd/` (`siftbot.service`, `siftbot-dashboard.service`). The dashboard proxies to `SIFT_API_URL` with `SIFT_API_TOKEN_FILE`; both are set in the unit.
+
 For boot-time hosting, `deploy/systemd/siftbot-dashboard.service` runs the built dashboard and `deploy/systemd/siftbot-ui.service` exports the same progress file:
 
 ```bash

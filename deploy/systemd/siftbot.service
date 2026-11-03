@@ -1,0 +1,17 @@
+[Unit]
+Description=siftbot API daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.t3/projects/siftbot
+Environment=SIFT_PROGRESS_FILE=%h/silfmc-live/border-progress.json
+Environment=SIFT_GUI_FILE=%h/silfmc-live/gui.json
+Environment=SIFT_GUI_ACTIONS=%h/silfmc-live/gui-actions
+ExecStart=/usr/local/bin/node src/daemon.js --port 18787 --instances %h/silfmc-live/instances.json --webhooks %h/silfmc-live/webhooks.json --log-level info
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -15,6 +15,11 @@ import { Separator } from "@/components/ui/separator"
 import {
   Compass,
   Copy,
+  Pencil,
+  Plus,
+  Terminal,
+  Trash2,
+  X,
   Drumstick,
   Footprints,
   HeartPulse,
@@ -35,6 +40,21 @@ import {
   useProgress
 } from "@/lib/progress"
 import { useGui } from "@/lib/gui"
+import {
+  createBot,
+  deleteBot,
+  getBot,
+  getLogs,
+  listBots,
+  reconnectBot,
+  restartBot,
+  sendInput,
+  startBot,
+  stopBot,
+  updateBot,
+  type Bot,
+  type LogRecord
+} from "@/lib/api"
 
 const STATUS_TONE: Record<string, string> = {
   walking: "border-primary/50 text-primary",
@@ -54,7 +74,6 @@ const chartConfig = {
 } satisfies ChartConfig
 
 function compact (value: number) {
-  if (value >= 10000) return `${Math.round(value / 1000)}k`
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
   return formatNumber(value)
 }
@@ -72,6 +91,120 @@ export default function App () {
   const gui = useGui(paused)
   const [guiOpen, setGuiOpen] = useState(false)
   const lastGuiWindow = useRef<number | null>(null)
+  const [bots, setBots] = useState<Bot[]>([])
+  const [selectedBotId, setSelectedBotId] = useState<string | null>(null)
+  const [botDetail, setBotDetail] = useState<Bot | null>(null)
+  const [logs, setLogs] = useState<LogRecord[]>([])
+  const [inputLine, setInputLine] = useState("")
+  const [consoleOpen, setConsoleOpen] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
+  const [editor, setEditor] = useState<null | {
+    mode: "add" | "edit"
+    id?: string
+    label: string
+    username: string
+    host: string
+    port: string
+    auth: string
+  }>(null)
+  const logSeq = useRef(0)
+  const logBox = useRef<HTMLDivElement | null>(null)
+
+  const refreshBots = async () => {
+    try {
+      const next = await listBots()
+      setBots(next)
+      setApiError(null)
+      setSelectedBotId(current => current && next.some(bot => bot.id === current) ? current : next[0]?.id ?? null)
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  useEffect(() => {
+    void refreshBots()
+    const timer = window.setInterval(refreshBots, 2500)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedBotId) {
+      setBotDetail(null)
+      setLogs([])
+      logSeq.current = 0
+      return
+    }
+    logSeq.current = 0
+    setLogs([])
+    let alive = true
+    const loadDetail = async () => {
+      try {
+        const bot = await getBot(selectedBotId)
+        if (alive) setBotDetail(bot)
+      } catch {
+        // list poll reports the error
+      }
+    }
+    const loadLogs = async () => {
+      try {
+        const records = await getLogs(selectedBotId, logSeq.current, 200)
+        if (!alive || records.length === 0) return
+        logSeq.current = records[records.length - 1].seq ?? logSeq.current
+        setLogs(current => [...current, ...records].slice(-500))
+      } catch {
+        // API might be restarting.
+      }
+    }
+    void loadDetail()
+    void loadLogs()
+    const detailTimer = window.setInterval(loadDetail, 2500)
+    const logTimer = window.setInterval(loadLogs, 1000)
+    return () => {
+      alive = false
+      window.clearInterval(detailTimer)
+      window.clearInterval(logTimer)
+    }
+  }, [selectedBotId])
+
+  useEffect(() => {
+    const box = logBox.current
+    if (box) box.scrollTop = box.scrollHeight
+  }, [logs])
+
+  const selectedBot = botDetail ?? bots.find(bot => bot.id === selectedBotId) ?? null
+
+  const doAction = (action: () => Promise<unknown>) => {
+    action().then(refreshBots).catch(err => setApiError(err instanceof Error ? err.message : String(err)))
+  }
+
+  const submitConsole = (event: React.FormEvent) => {
+    event.preventDefault()
+    const line = inputLine.trim()
+    if (!selectedBotId || !line) return
+    setInputLine("")
+    doAction(() => sendInput(selectedBotId, line))
+  }
+
+  const saveEditor = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!editor) return
+    const config = {
+      username: editor.username.trim(),
+      host: editor.host.trim(),
+      port: Number(editor.port) || 25565,
+      auth: editor.auth
+    }
+    const promise = editor.mode === "add"
+      ? createBot(editor.label.trim() || config.username, config)
+      : updateBot(editor.id!, editor.label.trim(), config)
+    promise
+      .then(bot => {
+        setEditor(null)
+        setSelectedBotId(bot.id)
+        return refreshBots()
+      })
+      .catch(err => setApiError(err instanceof Error ? err.message : String(err)))
+  }
 
   useEffect(() => {
     const id = gui?.window?.id ?? null
@@ -108,6 +241,84 @@ export default function App () {
 
   return (
     <main className="survey-grid min-h-dvh bg-background text-foreground">
+      <div className="lg:flex">
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-background/95 lg:flex">
+          <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+            <span className="font-heading text-sm font-medium">Bots</span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setEditor({ mode: "add", label: "", username: "", host: "", port: "25565", auth: "offline" })}
+              aria-label="add bot"
+            >
+              <Plus className="size-3.5" strokeWidth={1.5} />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-auto py-2">
+            {bots.length === 0 && (
+              <p className="px-4 font-mono text-[11px] text-muted-foreground">
+                {apiError ? "Control API offline" : "No bots yet."}
+              </p>
+            )}
+            {bots.map(bot => (
+              <button
+                key={bot.id}
+                type="button"
+                onClick={() => setSelectedBotId(bot.id)}
+                className={`flex w-full flex-col gap-0.5 px-4 py-2 text-left transition-colors ${selectedBotId === bot.id ? "bg-muted" : "hover:bg-muted/50"}`}
+              >
+                <span className="flex items-center gap-2 font-heading text-[13px]">
+                  <span className={`size-1.5 rounded-full ${statusDot(bot.status)}`} />
+                  {bot.label}
+                </span>
+                <span className="truncate pl-3.5 font-mono text-[10px] text-muted-foreground">
+                  {bot.status} · {bot.connection.host}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-border/70 p-3">
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button size="xs" variant="outline" disabled={!selectedBotId} onClick={() => selectedBotId && doAction(() => startBot(selectedBotId))}>Start</Button>
+              <Button size="xs" variant="outline" disabled={!selectedBotId} onClick={() => selectedBotId && doAction(() => stopBot(selectedBotId))}>Stop</Button>
+              <Button size="xs" variant="outline" disabled={!selectedBotId} onClick={() => selectedBotId && doAction(() => restartBot(selectedBotId))}>Restart</Button>
+              <Button size="xs" variant="outline" disabled={!selectedBotId} onClick={() => selectedBotId && doAction(() => reconnectBot(selectedBotId))}>Reconnect</Button>
+            </div>
+            <div className="mt-1.5 flex gap-1.5">
+              <Button
+                size="xs"
+                variant="ghost"
+                className="flex-1"
+                disabled={!selectedBot}
+                onClick={() => selectedBot && setEditor({
+                  mode: "edit",
+                  id: selectedBot.id,
+                  label: selectedBot.label,
+                  username: selectedBot.connection.username,
+                  host: selectedBot.connection.host,
+                  port: String(selectedBot.connection.port),
+                  auth: selectedBot.connection.auth
+                })}
+              >
+                <Pencil className="size-3" strokeWidth={1.5} /> Edit
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                className="flex-1 text-destructive"
+                disabled={!selectedBotId}
+                onClick={() => {
+                  if (selectedBotId && window.confirm("Delete this bot?")) doAction(() => deleteBot(selectedBotId))
+                }}
+              >
+                <Trash2 className="size-3" strokeWidth={1.5} /> Delete
+              </Button>
+            </div>
+            {apiError && <p className="mt-2 font-mono text-[10px] text-destructive">{apiError}</p>}
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1">
       <header className="border-b border-border/70">
         <div className="mx-auto flex max-w-6xl items-baseline justify-between gap-4 px-5 py-4 sm:px-8">
           <div className="flex items-baseline gap-4">
@@ -118,6 +329,15 @@ export default function App () {
           </div>
           <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
             <span className="hidden sm:inline">{progress?.server ?? "no fix"}</span>
+            <Button
+              variant="outline"
+              size="xs"
+              className="h-6 gap-1 whitespace-nowrap font-mono text-[11px]"
+              onClick={() => setConsoleOpen(value => !value)}
+            >
+              <Terminal className="size-3" strokeWidth={1.5} />
+              <span className="hidden sm:inline">Console</span>
+            </Button>
             <Button
               variant="outline"
               size="xs"
@@ -392,6 +612,100 @@ export default function App () {
       </footer>
 
       <GuiOverlay gui={gui} open={guiOpen} onClose={() => setGuiOpen(false)} />
+        </div>
+      </div>
+
+      {consoleOpen && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-[#0b1613] lg:left-64">
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-1.5">
+            <span className="truncate font-mono text-[11px] text-muted-foreground">
+              {selectedBot ? `${selectedBot.label} · ${selectedBot.connection.username}@${selectedBot.connection.host}` : "no bot selected"}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-muted-foreground">{selectedBot?.status ?? "—"}</span>
+              <Button variant="ghost" size="icon-xs" onClick={() => setConsoleOpen(false)} aria-label="close console">
+                <X className="size-3.5" strokeWidth={1.5} />
+              </Button>
+            </div>
+          </div>
+          <div ref={logBox} className="h-52 overflow-auto px-4 py-2 font-mono text-[11px] leading-5">
+            {logs.length === 0 && <span className="text-muted-foreground">No output yet. Start the bot or send a command.</span>}
+            {logs.map((record, index) => (
+              <div key={`${record.time}-${index}`} className="whitespace-pre-wrap">
+                <span className="text-muted-foreground">{formatClock(record.time)} </span>
+                <span className={recordTone(record)}>{record.text}</span>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={submitConsole} className="flex items-center gap-2 border-t border-border/60 px-4 py-2">
+            <span className="font-mono text-[11px] text-primary">›</span>
+            <input
+              value={inputLine}
+              onChange={event => setInputLine(event.target.value)}
+              placeholder="chat, /command, .command — e.g. .border-walk ne"
+              className="flex-1 bg-transparent font-mono text-[12px] outline-none placeholder:text-muted-foreground/60"
+              disabled={!selectedBotId}
+            />
+            <Button type="submit" size="xs" variant="outline" disabled={!selectedBotId}>Send</Button>
+          </form>
+        </div>
+      )}
+
+      {editor && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <form onSubmit={saveEditor} className="w-full max-w-sm border border-border bg-background p-5">
+            <h2 className="font-heading text-sm font-medium">{editor.mode === "add" ? "Add bot" : "Edit bot"}</h2>
+            <div className="mt-4 space-y-3">
+              {([
+                ["label", "Label"],
+                ["username", "Username"],
+                ["host", "Host"],
+                ["port", "Port"]
+              ] as const).map(([key, label]) => (
+                <label key={key} className="block font-mono text-[11px] text-muted-foreground">
+                  {label}
+                  <input
+                    value={editor[key]}
+                    onChange={event => setEditor(current => current ? { ...current, [key]: event.target.value } : current)}
+                    className="mt-1 w-full border border-border bg-card px-2 py-1 font-mono text-[12px] text-foreground outline-none focus:border-primary"
+                    required={key !== "label"}
+                  />
+                </label>
+              ))}
+              <label className="block font-mono text-[11px] text-muted-foreground">
+                Auth
+                <select
+                  value={editor.auth}
+                  onChange={event => setEditor(current => current ? { ...current, auth: event.target.value } : current)}
+                  className="mt-1 w-full border border-border bg-card px-2 py-1 font-mono text-[12px] text-foreground outline-none focus:border-primary"
+                >
+                  <option value="offline">offline</option>
+                  <option value="microsoft">microsoft</option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditor(null)}>Cancel</Button>
+              <Button type="submit" size="sm">Save</Button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   )
+}
+
+function statusDot (status: string) {
+  if (status === "online") return "bg-secondary"
+  if (status === "connecting" || status === "retrying") return "bg-primary animate-pulse"
+  if (status === "error" || status === "stopping") return "bg-destructive"
+  return "bg-muted-foreground/50"
+}
+
+function recordTone (record: LogRecord) {
+  if (record.level === "error") return "text-destructive"
+  if (record.level === "warn") return "text-primary"
+  if (record.kind === "system") return "text-muted-foreground"
+  if (record.kind === "chat") return "text-foreground"
+  return "text-foreground/90"
 }

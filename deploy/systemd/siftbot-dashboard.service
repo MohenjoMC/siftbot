@@ -7,6 +7,8 @@ WorkingDirectory=%h/.t3/projects/siftbot/web
 Environment=SIFT_PROGRESS_FILE=%h/silfmc-live/border-progress.json
 Environment=SIFT_GUI_FILE=%h/silfmc-live/gui.json
 Environment=SIFT_GUI_ACTIONS=%h/silfmc-live/gui-actions
+Environment=SIFT_API_URL=http://127.0.0.1:18787
+Environment=SIFT_API_TOKEN_FILE=/home/home/silfmc-live/api-token
 Environment=HOST=0.0.0.0
 Environment=PORT=8790
 ExecStart=/usr/local/bin/node %h/.t3/projects/siftbot/web/server.mjs

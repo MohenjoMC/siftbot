@@ -10,6 +10,16 @@ const guiFile = process.env.SIFT_GUI_FILE || path.join(here, "..", "gui.json")
 const guiActions = process.env.SIFT_GUI_ACTIONS || path.join(here, "..", "gui-actions")
 const port = Number(process.env.PORT) || 8790
 const host = process.env.HOST || "127.0.0.1"
+const apiBase = new URL(process.env.SIFT_API_URL || "http://127.0.0.1:18787")
+const apiTokenFile = process.env.SIFT_API_TOKEN_FILE || ""
+let apiToken = process.env.SIFT_API_TOKEN || ""
+
+function token () {
+  if (apiToken) return apiToken
+  if (!apiTokenFile) return ""
+  try { apiToken = fs.readFileSync(apiTokenFile, "utf8").trim() } catch {}
+  return apiToken
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -79,6 +89,23 @@ const server = http.createServer((request, response) => {
       })
       response.end(JSON.stringify({ error: "no progress file", file: progressFile }))
     }
+    return
+  }
+
+  if (url.pathname.startsWith("/api/")) {
+    const target = new URL(url.pathname + url.search, apiBase)
+    const headers = { ...request.headers, host: apiBase.host }
+    const auth = token()
+    if (auth) headers.authorization = `Bearer ${auth}`
+    const upstream = http.request(target, { method: request.method, headers }, upstreamResponse => {
+      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers)
+      upstreamResponse.pipe(response)
+    })
+    upstream.on("error", err => {
+      response.writeHead(502, { "Content-Type": "application/json; charset=utf-8" })
+      response.end(JSON.stringify({ error: "control API unavailable", detail: err.message }))
+    })
+    request.pipe(upstream)
     return
   }
 
