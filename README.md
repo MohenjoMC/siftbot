@@ -396,6 +396,16 @@ systemctl --user enable --now siftbot-dashboard
 
 No progress file yet? The page explains which command starts a walk.
 
+### Diagnosing a stalled walk
+
+If the distance sits on the same value for minutes, run the live check:
+
+```bash
+ID=<instance-id> ./scripts/walker-progress.sh
+```
+
+It restarts `.border-walk ne` and fails unless the bot covers at least two blocks in 15 seconds. The walker marks the walk `stuck` after 45 seconds without net progress, and logs whether it has a pickaxe: without one it cannot tunnel stone, so it can only route around rises (jumps into blocks are rejected by strict servers).
+
 ### In-game GUI on the web
 
 The dashboard also mirrors the bot's open inventory and menus. The `gui-bridge`

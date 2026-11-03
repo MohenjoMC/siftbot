@@ -237,7 +237,8 @@ export class ClientIdentity {
           pitch: params.pitch,
           onGround: params.onGround ?? params.flags?.onGround
         }
-        return originalWrite(name, applyMovementFlags(params))
+        const lookParams = process.env.SIFT_NO_COLLISION_FLAG === '1' ? params : applyMovementFlags(params)
+        return originalWrite(name, lookParams)
       }
 
       if (name === 'position' && this.lastTeleportAck) {
@@ -267,9 +268,11 @@ export class ClientIdentity {
         }
       }
 
-      const outParams = (name === 'position' || name === 'position_look' || name === 'look')
-        ? applyMovementFlags(params)
-        : params
+      const outParams = process.env.SIFT_NO_COLLISION_FLAG === '1'
+        ? params
+        : (name === 'position' || name === 'position_look' || name === 'look')
+          ? applyMovementFlags(params)
+          : params
       return originalWrite(name, outParams)
     }
   }
