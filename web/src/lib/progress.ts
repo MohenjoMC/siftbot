@@ -27,7 +27,7 @@ export type Progress = {
 
 export type LogEvent = { time: number; text: string }
 
-const POLL_MS = 2000
+const POLL_MS = 500
 
 export function formatNumber (value: number | null | undefined, digits = 0) {
   if (value == null || !Number.isFinite(value)) return "—"

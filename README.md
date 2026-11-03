@@ -365,7 +365,7 @@ The bundled `border-walker` plugin drives long overland expeditions:
 .border-stop
 ```
 
-It walks and sprints toward the target (1,000 blocks inside a 40,000 border by default), jumps and sidesteps when stuck, releases sprint while eating, and eats from the inventory whenever food drops to 17 or below. Progress is written to `SIFT_PROGRESS_FILE` (default `./border-progress.json`) every two seconds: position, remaining distance, speed, ETA, health/food, sprint/eat state, and a trail for charting.
+It walks and sprints toward the target (1,000 blocks inside a 40,000 border by default), jumps and sidesteps when stuck, releases sprint while eating, and eats from the inventory whenever food drops to 17 or below. The live snapshot is rewritten four times a second in `SIFT_PROGRESS_FILE` (default `./border-progress.json`): position, remaining distance, speed, ETA, health/food and sprint/eat state. Trail points for the chart are sampled every two seconds.
 
 `web/` is the live dashboard — Vite + React + shadcn/ui, polling `/progress` every two seconds:
 

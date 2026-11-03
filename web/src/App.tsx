@@ -431,7 +431,7 @@ export default function App () {
             <div className="flex items-baseline justify-between">
               <h2 className="font-heading text-sm font-medium">Distance to corner</h2>
               <span className="font-mono text-[10px] text-muted-foreground">
-                {paused ? "paused" : "live · 2s"}
+                {paused ? "paused" : "live · 0.5s"}
               </span>
             </div>
             {chartData.length > 1 ? (

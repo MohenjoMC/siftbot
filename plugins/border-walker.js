@@ -76,7 +76,7 @@ export default function create (ctx) {
     usage: '.border-walk [ne|nw|se|sw|x,z]',
     description: 'Walk (and sprint) to a world-border corner, eating on the way',
     aliases: ['walk-border'],
-    run: args => start(args[0])
+    run: args => { void start(args[0]) }
   })
 
   ctx.registerCommand('border-stop', {
@@ -164,6 +164,7 @@ export default function create (ctx) {
       sampleAt: Date.now(),
       lastMoveAt: Date.now(),
       lastWriteAt: 0,
+      lastTrailAt: 0,
       strafe: 1,
       lastJumpAt: 0
     }
@@ -247,14 +248,18 @@ export default function create (ctx) {
           run.sampleAt = now
         }
 
-        if (now - run.lastWriteAt >= 2000) {
-          run.lastWriteAt = now
+        if (now - run.lastTrailAt >= 2000) {
+          run.lastTrailAt = now
           run.trail.push({
             t: now,
             x: Math.round(bot.entity.position.x),
             z: Math.round(bot.entity.position.z)
           })
           if (run.trail.length > 720) run.trail.shift()
+        }
+        // Position/vitals update in near real time; only the trail is sampled.
+        if (now - run.lastWriteAt >= 250) {
+          run.lastWriteAt = now
           writeProgress()
         }
 
