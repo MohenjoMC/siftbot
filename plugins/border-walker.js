@@ -260,6 +260,7 @@ export default function create (ctx) {
           }
         }
         run.heading = heading
+        if (!run.path || run.path.length === 0) await clearAhead(bot, ctx, run)
         await bot.look(heading, 0, true)
         if (run.eating) {
           await sleep(150)
@@ -270,17 +271,19 @@ export default function create (ctx) {
         bot.setControlState('sprint', false)
         try { if (bot.getControlState?.('sneak')) bot.setControlState('sneak', false) } catch {}
 
-        // Auto-jump: hop up a single step, or swim when in water.
+        // Auto-jump: hop one step, or swim when in water.
         const fx = -Math.sin(heading)
         const fz = -Math.cos(heading)
         const feetAhead = solidAt(bot, fx, 0, fz)
         const headAhead = solidAt(bot, fx, 1, fz)
-        if (bot.entity.isInWater || stepUp || (feetAhead && !headAhead)) {
-          if (bot.entity.onGround || bot.entity.isInWater) {
-            bot.setControlState('jump', true)
-            setTimeout(() => {
-              try { bot.setControlState('jump', false) } catch {}
-            }, 60)
+        if (bot.entity.isInWater) {
+          bot.setControlState('jump', true)
+        } else {
+          try { bot.setControlState('jump', false) } catch {}
+          if ((stepUp || (feetAhead && !headAhead)) && bot.entity.onGround) {
+            // Strict servers set the player back when forward is held during a
+            // jump against a block. Jump first, then apply forward mid-air.
+            await hopStep(bot, heading)
           }
         }
 
@@ -532,7 +535,9 @@ function planPath (bot, goalDx, goalDz, radius = 20) {
           if (sideA.y !== current.y || sideB.y !== current.y) continue
           if (next.y !== current.y) continue
         }
-        const cost = current.g + (dx !== 0 && dz !== 0 ? 1.414 : 1) + (next.water ? 3 : 0)
+        const climb = next.y - current.y
+        const slopeCost = climb > 0 ? 20 : climb < -1 ? 4 : 0
+        const cost = current.g + (dx !== 0 && dz !== 0 ? 1.414 : 1) + (next.water ? 3 : 0) + slopeCost
         const nextKey = key(next.x, next.z)
         if (seen.has(nextKey) && seen.get(nextKey) <= cost) continue
         open.push({ ...next, g: cost, f: cost + heuristic(next), parent: current })
@@ -591,6 +596,38 @@ function chooseHeading (bot, targetYaw) {
     }
   }
   return best
+}
+
+/** No route: clear the block in front so a new plan can find a way out. */
+async function clearAhead (bot, logger, run) {
+  const now = Date.now()
+  if (now - (run.lastDigAt ?? 0) < 900) return
+  run.lastDigAt = now
+  const position = bot.entity.position
+  const yaw = bot.entity.yaw
+  let dug = false
+  // Clear both the feet and head layers so the bot can step into the tunnel.
+  for (const height of [0, 1]) {
+    const block = bot.blockAt(position.offset(-Math.sin(yaw) * 1.3, height, -Math.cos(yaw) * 1.3))
+    if (block && block.boundingBox === 'block' && !/bedrock|obsidian|water|lava/.test(block.name)) {
+      logger.log(`border-walker: clearing ${block.name}`)
+      try { await bot.dig(block); dug = true } catch {}
+    }
+  }
+  if (!dug) return
+}
+
+/** Jump first, then press forward while airborne. */
+async function hopStep (bot, heading) {
+  try { bot.setControlState('forward', false) } catch { return }
+  try { await bot.look(heading, 0, true) } catch {}
+  bot.setControlState('jump', true)
+  await sleep(60)
+  try { bot.setControlState('jump', false) } catch {}
+  await sleep(130)
+  bot.setControlState('forward', true)
+  await sleep(450)
+  try { bot.setControlState('forward', false) } catch {}
 }
 
 function formatEta (seconds) {

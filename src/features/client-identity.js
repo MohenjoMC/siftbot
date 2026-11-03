@@ -185,8 +185,37 @@ export class ClientIdentity {
     if (typeof client.write !== 'function') return
 
     this.lastTeleportAck = null
+    this.lastMoveSample = null
     const originalWrite = client.write.bind(client)
     this.unpatchMovementWrite = () => { client.write = originalWrite }
+
+    const control = key => {
+      try {
+        return Boolean(this.bot.getControlState?.(key))
+      } catch {
+        return false
+      }
+    }
+
+    // 1.21.3+ servers use hasHorizontalCollision when the player pushes a
+    // block; mineflayer always sends false, so a jump against a step looks
+    // like unrequested motion and is set back.
+    const applyMovementFlags = params => {
+      const entity = this.bot.entity
+      const position = entity?.position
+      const previous = this.lastMoveSample
+      const wantsMove = control('forward') || control('back') || control('left') || control('right')
+      const moved = position && previous
+        ? Math.hypot(position.x - previous.x, position.z - previous.z)
+        : 0
+      const collided = Boolean(wantsMove && previous && moved < 0.005)
+      if (position) this.lastMoveSample = { x: position.x, z: position.z }
+      const onGround = params.flags?.onGround ?? params.onGround ?? entity?.onGround ?? false
+      return {
+        ...params,
+        flags: { ...(params.flags ?? {}), onGround, hasHorizontalCollision: collided }
+      }
+    }
 
     client.write = (name, params) => {
       if (this.stopped || !this.enabled) return originalWrite(name, params)
@@ -208,7 +237,7 @@ export class ClientIdentity {
           pitch: params.pitch,
           onGround: params.onGround ?? params.flags?.onGround
         }
-        return originalWrite(name, params)
+        return originalWrite(name, applyMovementFlags(params))
       }
 
       if (name === 'position' && this.lastTeleportAck) {
@@ -238,7 +267,10 @@ export class ClientIdentity {
         }
       }
 
-      return originalWrite(name, params)
+      const outParams = (name === 'position' || name === 'position_look' || name === 'look')
+        ? applyMovementFlags(params)
+        : params
+      return originalWrite(name, outParams)
     }
   }
 
