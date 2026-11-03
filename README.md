@@ -383,6 +383,23 @@ systemctl --user enable --now siftbot-dashboard
 
 No progress file yet? The page explains which command starts a walk.
 
+### In-game GUI on the web
+
+The dashboard also mirrors the bot's open inventory and menus. The `gui-bridge`
+plugin publishes the current window and applies clicks back to the bot, so when
+`/shop` (or a chest, warp menu, RTP screen, etc.) opens, a Minecraft-style panel
+appears in the page: grey slots, beveled edges, real item textures from the
+[devault](https://github.com/Coder-soft/devault) asset library in `web/public/items`.
+
+- Click a slot (or arrows + Enter) to click it on the bot.
+- **Use item** right-clicks the held item — the usual way to open a server menu.
+- **Close** closes the window; the command box lets you send `/shop` or any other command.
+- Icons exist for every vanilla item; unknown names fall back to initials.
+
+The bot side writes `SIFT_GUI_FILE` and reads `SIFT_GUI_ACTIONS` (both set in
+`deploy/systemd/siftbot-ui.service`); the dashboard exposes `/gui` and
+`POST /gui/action`.
+
 ## Anti-bot compatibility (Sonar)
 
 siftbot speaks the vanilla client's full handshake and session cadence, which is enough to pass the standard verification used by [Sonar](https://github.com/jonesdevelopment/sonar) — the anti-bot plugin found on many public servers. Tested against **Sonar 2.1.53** on Paper 26.1.2 with its default configuration:
@@ -462,7 +479,8 @@ Set `SIFTBOT_SOCKS=127.0.0.1:9050` to send the Minecraft connection through a SO
 | `src/features/auth.js` | Captures register/login passwords and answers the server's login prompt. |
 | `src/plugins/manager.js` | Plugin discovery, per-session binding, hot reload and cleanup. |
 | `src/plugins/context.js` | The plugin API: actions, inventory, containers, commands, events/timers. |
-| `web/` | Vite + React + shadcn/ui expedition dashboard, plus the telemetry server. |
+| `web/` | Vite + React + shadcn/ui expedition dashboard, telemetry server and the in-game GUI mirror. |
+| `plugins/gui-bridge.js` | Publishes the bot's open window and applies web clicks back to it. |
 | `src/socks5.js` | Optional SOCKS5 egress (`SIFTBOT_SOCKS`) for testing without the local address. |
 | `src/features/auto-eat.js` | Hunger checks, food choice, equip/consume, held-item restore. |
 | `src/features/sneak.js` | Held shift, spawn re-application, watchdog. |

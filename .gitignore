@@ -16,3 +16,8 @@ certs/
 credentials.json
 credentials.json.tmp
 *.px
+gui.json
+gui.json.tmp
+gui-actions/
+border-progress.json
+border-progress.json.tmp

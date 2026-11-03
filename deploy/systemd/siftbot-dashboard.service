@@ -5,6 +5,8 @@ After=network-online.target
 [Service]
 WorkingDirectory=%h/.t3/projects/siftbot/web
 Environment=SIFT_PROGRESS_FILE=%h/silfmc-live/border-progress.json
+Environment=SIFT_GUI_FILE=%h/silfmc-live/gui.json
+Environment=SIFT_GUI_ACTIONS=%h/silfmc-live/gui-actions
 Environment=HOST=0.0.0.0
 Environment=PORT=8790
 ExecStart=/usr/local/bin/node %h/.t3/projects/siftbot/web/server.mjs

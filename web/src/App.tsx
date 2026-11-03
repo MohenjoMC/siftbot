@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { GuiOverlay } from "@/components/GuiOverlay"
 import {
   ChartContainer,
   ChartTooltip,
@@ -17,6 +18,7 @@ import {
   Drumstick,
   Footprints,
   HeartPulse,
+  LayoutGrid,
   MapPin,
   Pause,
   Play,
@@ -32,6 +34,7 @@ import {
   routeFraction,
   useProgress
 } from "@/lib/progress"
+import { useGui } from "@/lib/gui"
 
 const STATUS_TONE: Record<string, string> = {
   walking: "border-primary/50 text-primary",
@@ -66,6 +69,15 @@ export default function App () {
   const [paused, setPaused] = useState(false)
   const [copied, setCopied] = useState(false)
   const { progress, events, error } = useProgress(paused)
+  const gui = useGui(paused)
+  const [guiOpen, setGuiOpen] = useState(false)
+  const lastGuiWindow = useRef<number | null>(null)
+
+  useEffect(() => {
+    const id = gui?.window?.id ?? null
+    if (id != null && id !== lastGuiWindow.current) setGuiOpen(true)
+    lastGuiWindow.current = id
+  }, [gui?.window?.id])
 
   const fraction = routeFraction(progress)
   const chartData = useMemo(() => {
@@ -77,7 +89,8 @@ export default function App () {
   }, [progress])
 
   const origin = chartData[0]?.time ?? 0
-  const status = progress?.status ?? (error ? "error" : "waiting")
+  const stale = progress ? Date.now() - new Date(progress.updatedAt).getTime() > 20000 : false
+  const status = progress ? (stale ? "offline" : progress.status) : (error ? "error" : "waiting")
   const updatedLabel = progress ? formatAge(progress.updatedAt) : "—"
 
   const copyCoordinates = async () => {
@@ -105,6 +118,16 @@ export default function App () {
           </div>
           <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
             <span className="hidden sm:inline">{progress?.server ?? "no fix"}</span>
+            <Button
+              variant="outline"
+              size="xs"
+              className="h-6 gap-1 whitespace-nowrap font-mono text-[11px]"
+              onClick={() => setGuiOpen(true)}
+            >
+              <LayoutGrid className="size-3" strokeWidth={1.5} />
+              <span className="hidden sm:inline">GUI</span>
+              {gui?.window ? <span className="max-w-28 truncate">{gui.window.title}</span> : null}
+            </Button>
             <Badge variant="outline" className={`whitespace-nowrap ${STATUS_TONE[status] ?? STATUS_TONE.stopped}`}>
               {status}
             </Badge>
@@ -367,6 +390,8 @@ export default function App () {
           {progress ? `target ${formatCoordinate(progress.target.x)}, ${formatCoordinate(progress.target.z)}` : "—"}
         </span>
       </footer>
+
+      <GuiOverlay gui={gui} open={guiOpen} onClose={() => setGuiOpen(false)} />
     </main>
   )
 }

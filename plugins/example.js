@@ -62,6 +62,20 @@ export default function create (ctx) {
     run: (args, c) => c.bot.activateItem()
   })
 
+  ctx.registerCommand('open', {
+    usage: '.open [radius]',
+    description: 'Open the nearest container and leave it open',
+    run: async (args, c) => {
+      const bot = c.bot
+      const names = ['chest', 'trapped_chest', 'barrel', 'ender_chest']
+      const ids = names.map(name => bot.registry?.blocksByName?.[name]?.id).filter(id => id != null)
+      const block = bot.findBlock({ matching: ids, maxDistance: Number(args[0]) || 8 })
+      if (!block) return c.log('no container nearby')
+      const window = await bot.openContainer(block)
+      c.log(`opened ${block.name} (${window.slots.length} slots)`)
+    }
+  })
+
   ctx.registerCommand('click', {
     usage: '.click <slot>',
     description: 'Click a slot in the open menu',

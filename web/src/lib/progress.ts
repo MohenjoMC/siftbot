@@ -110,6 +110,13 @@ export function useProgress (paused: boolean) {
     const poll = async () => {
       try {
         const response = await fetch("/progress", { cache: "no-store" })
+        if (response.status === 404) {
+          if (active) {
+            setProgress(null)
+            setError(null)
+          }
+          return
+        }
         if (!response.ok) throw new Error(`progress endpoint returned ${response.status}`)
         const next = (await response.json()) as Progress
         if (!active) return

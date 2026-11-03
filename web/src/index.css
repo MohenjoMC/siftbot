@@ -8,6 +8,7 @@
   --font-heading: "Anybody", "Anybody Fallback", ui-sans-serif, sans-serif;
   --font-sans: "Anybody", "Anybody Fallback", ui-sans-serif, sans-serif;
   --font-mono: "Spline Sans Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-pixel: "Silkscreen", "Spline Sans Mono", monospace;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);

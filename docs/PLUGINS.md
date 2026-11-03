@@ -107,3 +107,10 @@ and `.border-stop`: it walks and sprints to a border corner, jumping and
 sidestepping when stuck and eating from the inventory when food runs low. Every
 two seconds it writes a JSON snapshot (position, distance, speed, ETA, vitals,
 trail) to `SIFT_PROGRESS_FILE` for the `web/` dashboard.
+
+
+`plugins/gui-bridge.js` mirrors the bot's open window to `SIFT_GUI_FILE` and
+applies actions written to `SIFT_GUI_ACTIONS` (one JSON file per request):
+`{action:"click",slot}`, `{action:"use"}`, `{action:"close"}` or
+`{action:"command",command:"/shop"}`. The dashboard uses this to render and
+operate the real in-game GUI.

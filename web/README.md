@@ -13,3 +13,8 @@ SIFT_PROGRESS_FILE=/path/to/border-progress.json PORT=8790 node server.mjs
 Open http://127.0.0.1:8790. Start a walk from the bot console with
 `.border-walk ne`; the page explains the command when there is no progress file
 yet. For boot-time hosting use `../deploy/systemd/siftbot-dashboard.service`.
+
+
+The dashboard also mirrors the bot's open inventory/menus (`gui-bridge` plugin):
+click slots, use the held item, close windows and send `/shop` from the page.
+Item icons in `public/items` were generated with the devault CLI.
