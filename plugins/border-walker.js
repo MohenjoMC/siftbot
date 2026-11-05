@@ -582,7 +582,8 @@ function standHeight (bot, x, z, baseY) {
     x,
     z,
     y: solidY + 1,
-    water: feet.name === 'water' || head.name === 'water'
+    water: feet.name === 'water' || head.name === 'water',
+    slippery: /ice|snow_block|packed_ice|blue_ice/.test(blockAt(bot, x, solidY, z)?.name ?? '')
   }
 }
 
@@ -655,7 +656,8 @@ function planPath (bot, goalDx, goalDz, radius = 48, step = 2) {
         }
         const climb = next.y - current.y
         const slopeCost = climb < -1 ? 4 : 0
-        const cost = current.g + (dx !== 0 && dz !== 0 ? 1.414 : 1) * step + (next.water ? 3 : 0) + slopeCost
+        const cost = current.g + (dx !== 0 && dz !== 0 ? 1.414 : 1) * step +
+          (next.water ? 3 : 0) + slopeCost + (next.slippery ? 20 : 0)
         const nextKey = key(next.x, next.z)
         if (seen.has(nextKey) && seen.get(nextKey) <= cost) continue
         open.push({ ...next, g: cost, f: cost + heuristic(next), parent: current })
