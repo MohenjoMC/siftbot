@@ -375,7 +375,7 @@ export default function create (ctx) {
         }
         if (!run.planUseful && run.detour) heading = run.detour.heading
         run.heading = heading
-        await bot.look(heading, 0, true)
+        await turnTo(bot, heading)
         if (run.eating) {
           await sleep(150)
           continue
@@ -400,7 +400,6 @@ export default function create (ctx) {
             bot.setControlState('forward', false)
             bot.setControlState('sprint', false)
             if (!headAhead) {
-              // One-block step with headroom: jump first, then move forward.
               await hopStep(bot, heading)
             } else {
               // Two-block wall: carve it if we can, otherwise route around.
@@ -445,7 +444,7 @@ export default function create (ctx) {
           try { bot.setControlState('forward', false) } catch {}
           const avoid = chooseHeading(bot, run.detour ? run.detour.heading : targetYaw)
           run.heading = avoid
-          await bot.look(avoid, 0, true)
+          await turnTo(bot, avoid, 0)
           await clearAhead(bot, ctx, run)
         }
 
@@ -740,6 +739,15 @@ async function clearAhead (bot, logger, run) {
   if (!dug) return
 }
 
+/** Turn only when the heading actually changes; force-look every tick makes
+ * strict servers reject the movement as a rotation/prediction mismatch. */
+async function turnTo (bot, yaw, minDelta = 0.12) {
+  const current = bot.entity?.yaw ?? 0
+  const delta = Math.atan2(Math.sin(yaw - current), Math.cos(yaw - current))
+  if (Math.abs(delta) < minDelta) return
+  try { await bot.look(yaw, 0, true) } catch {}
+}
+
 /** Carve the feet and head blocks of a step, then walk into the gap. */
 const SOFT_BLOCK = /dirt|grass_block|sand|gravel|snow|leaves|log|wood|planks|clay|mud|podzol|mycelium|farmland|path|hay|moss|roots|vine|scaffolding|bamboo|cactus|melon|pumpkin|wheat|carrot|potato|beetroot|nether_wart|crimson|warped|shroomlight|froglight/i
 
@@ -763,7 +771,7 @@ async function digStep (bot, logger, heading) {
 /** Jump first, then press forward while airborne. */
 async function hopStep (bot, heading) {
   try { bot.setControlState('forward', false) } catch { return }
-  try { await bot.look(heading, 0, true) } catch {}
+  await turnTo(bot, heading)
   bot.setControlState('jump', true)
   await sleep(60)
   try { bot.setControlState('jump', false) } catch {}
