@@ -1,4 +1,6 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react'
+import fs from 'node:fs'
+import path from 'node:path'
 import { TextAttributes } from '@opentui/core'
 import type { InputRenderable } from '@opentui/core'
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
@@ -359,6 +361,106 @@ function ConfirmView ({ title, message, onYes, onNo }) {
       <text fg={COLORS.text}>{message}</text>
       <box height={1} />
       <text fg={COLORS.faint}>y confirm · n / Esc cancel</text>
+    </box>
+  )
+}
+
+const SPARK = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+
+function sparkline (values: number[], width: number) {
+  if (values.length === 0 || width < 2) return ''
+  const n = Math.min(width, Math.max(2, values.length))
+  const sampled: number[] = []
+  for (let i = 0; i < n; i++) {
+    const at = Math.round((i / (n - 1)) * (values.length - 1))
+    sampled.push(values[at])
+  }
+  const min = Math.min(...sampled)
+  const max = Math.max(...sampled)
+  const span = max - min || 1
+  return sampled.map(v => SPARK[Math.max(0, Math.min(7, Math.floor(((v - min) / span) * 7)))]).join('')
+}
+
+function readProgress (): any | null {
+  const candidates = [
+    process.env.SIFT_PROGRESS_FILE,
+    '/home/home/silfmc-live/border-progress.json',
+    '/home/home/border-progress.json',
+    path.join(process.cwd(), 'border-progress.json')
+  ].filter(Boolean) as string[]
+  let best: any = null
+  for (const file of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (!best || new Date(parsed.updatedAt).getTime() > new Date(best.updatedAt).getTime()) best = parsed
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return best
+}
+
+function useExpedition () {
+  const [progress, setProgress] = useState<any | null>(null)
+  useEffect(() => {
+    let alive = true
+    const tick = () => { if (alive) setProgress(readProgress()) }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+  return progress
+}
+
+function ExpeditionChart ({ width }: { width: number }) {
+  const progress = useExpedition()
+  if (!progress || !Array.isArray(progress.trail) || progress.trail.length === 0) {
+    return (
+      <box height={3} paddingLeft={1} flexDirection="column">
+        <text fg={COLORS.faint}>expedition chart · waiting for border-progress.json</text>
+      </box>
+    )
+  }
+  const chartWidth = Math.max(12, Math.min(Math.max(12, width - 2), 80))
+  const target = progress.target
+  const trail = progress.trail as Array<{ t: number; x: number; z: number }>
+  const remaining = trail.map(point => Math.hypot(target.x - point.x, target.z - point.z))
+  const maxRemaining = Math.max(...remaining)
+  const progressLine = sparkline(remaining.map(value => maxRemaining - value), chartWidth)
+  const speed = trail.slice(1).map((point, index) => {
+    const previous = trail[index]
+    const seconds = (point.t - previous.t) / 1000
+    return seconds > 0 ? Math.hypot(point.x - previous.x, point.z - previous.z) / seconds : 0
+  })
+  const speedLine = sparkline(speed, chartWidth)
+
+  const rows = 4
+  const cols = Math.max(12, Math.min(Math.max(12, width - 2), 80))
+  const xs = [...trail.map(point => point.x), target.x, progress.position.x]
+  const zs = [...trail.map(point => point.z), target.z, progress.position.z]
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs)
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(' '))
+  const put = (x: number, z: number, char: string) => {
+    const cx = Math.max(0, Math.min(cols - 1, Math.round(((x - minX) / (maxX - minX || 1)) * (cols - 1))))
+    const cz = Math.max(0, Math.min(rows - 1, Math.round(((z - minZ) / (maxZ - minZ || 1)) * (rows - 1))))
+    grid[cz][cx] = char
+  }
+  for (const point of trail) put(point.x, point.z, '·')
+  put(target.x, target.z, '×')
+  put(progress.position.x, progress.position.z, '@')
+  const eta = progress.etaSeconds ? formatDuration(progress.etaSeconds * 1000) : '—'
+
+  return (
+    <box flexDirection="column" height={rows + 3} paddingLeft={1} paddingRight={1}>
+      <text fg={COLORS.cyan}>
+        {`expedition ${progress.corner ?? ''} · ${Math.round(progress.distance)}m · eta ${eta} · ${progress.status}`}
+      </text>
+      <text fg={COLORS.green}>{`remaining ${progressLine}`}</text>
+      <text fg={COLORS.yellow}>{`speed     ${speedLine}`}</text>
+      {grid.map((row, index) => (
+        <text key={index} fg={COLORS.dim}>{row.join('')}</text>
+      ))}
     </box>
   )
 }
@@ -769,6 +871,7 @@ export function App ({ manager, dataFile }) {
                     </text>
                   ))}
                 </box>
+                <ExpeditionChart width={Math.max(24, width - 34)} />
                 <scrollbox flexGrow={1} stickyScroll stickyStart="bottom" verticalScrollbarOptions={{ showArrows: false }}>
                   {records.length === 0 && (
                     <box paddingLeft={1}>
