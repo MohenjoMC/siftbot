@@ -387,7 +387,8 @@ export default function create (ctx) {
         const headAhead = solidAt(bot, fx, 1, fz)
         const wallAhead = feetAhead
         try { if (bot.getControlState?.('sneak')) bot.setControlState('sneak', false) } catch {}
-        bot.setControlState('sprint', false)
+        const wantSprint = bot.food > 6 && distance > 64
+        bot.setControlState('sprint', wantSprint)
         if (bot.entity.isInWater) {
           bot.setControlState('forward', true)
           bot.setControlState('jump', true)
@@ -397,6 +398,7 @@ export default function create (ctx) {
             // Never shove a blocked step/wall: strict servers set the player
             // back on every blocked tick.
             bot.setControlState('forward', false)
+            bot.setControlState('sprint', false)
             if (!headAhead) {
               // One-block step with headroom: jump first, then move forward.
               await hopStep(bot, heading)
@@ -431,7 +433,7 @@ export default function create (ctx) {
           run.lastPos = current.clone()
           run.lastPosAt = Date.now()
           run.lastMoveAt = Date.now()
-          run.sprinting = false
+          run.sprinting = wantSprint
         }
 
         // Pressing into a wall makes strict servers set the player back; turn
