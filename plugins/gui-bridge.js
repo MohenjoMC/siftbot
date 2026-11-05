@@ -20,6 +20,18 @@ export default function create (ctx) {
   let signature = ''
   let lastAction = null
 
+  const bot = ctx.bot
+  if (bot) {
+    bot.on('windowOpen', () => {
+      // A walking bot drifts away from the container and the menu closes.
+      try {
+        for (const key of ['forward', 'back', 'left', 'right', 'jump', 'sprint']) {
+          bot.setControlState(key, false)
+        }
+      } catch {}
+    })
+  }
+
   const timer = setInterval(() => {
     dump()
     void processActions()
@@ -110,6 +122,11 @@ export default function create (ctx) {
       case 'use':
         bot.activateItem()
         return
+      case 'name': {
+        if (!bot.currentWindow) throw new Error('no window is open')
+        bot._client.write('name_item', { name: String(action.name ?? '') })
+        return
+      }
       case 'close':
         if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
         return

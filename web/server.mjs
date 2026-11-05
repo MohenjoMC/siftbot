@@ -57,12 +57,15 @@ function readJson (request, limit) {
 }
 
 function validateAction (body) {
-  const allowed = new Set(["click", "use", "close", "command"])
+  const allowed = new Set(["click", "use", "close", "name", "command"])
   if (!body || typeof body !== "object" || !allowed.has(body.action)) {
     throw Object.assign(new Error("invalid action"), { statusCode: 400 })
   }
   if (body.action === "click" && (!Number.isInteger(body.slot) || body.slot < 0 || body.slot > 255)) {
     throw Object.assign(new Error("invalid slot"), { statusCode: 400 })
+  }
+  if (body.action === "name" && (typeof body.name !== "string" || body.name.length > 100)) {
+    throw Object.assign(new Error("invalid name"), { statusCode: 400 })
   }
   if (body.action === "command") {
     if (typeof body.command !== "string" || !body.command.startsWith("/") || body.command.length > 200) {

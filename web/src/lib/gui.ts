@@ -19,6 +19,7 @@ export type GuiAction =
   | { action: "click"; slot: number; button?: number }
   | { action: "use" }
   | { action: "close" }
+  | { action: "name"; name: string }
   | { action: "command"; command: string }
 
 export type GuiState = {

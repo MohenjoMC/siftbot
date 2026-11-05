@@ -15,6 +15,7 @@ export function GuiOverlay ({ gui, open, onClose }: Props) {
   const menu = gui?.window ?? null
   const [selected, setSelected] = useState(0)
   const [command, setCommand] = useState("/shop")
+  const [search, setSearch] = useState("")
   const [message, setMessage] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const first = useRef<number | null>(null)
@@ -105,6 +106,25 @@ export function GuiOverlay ({ gui, open, onClose }: Props) {
           </div>
         </div>
 
+        {menu && /anvil/i.test(menu.type) ? (
+          <form
+            className="flex items-center gap-2 px-3 pt-3"
+            onSubmit={event => {
+              event.preventDefault()
+              void run({ action: "name", name: search }, `search ${search || "(empty)"}`)
+            }}
+          >
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="type to search…"
+              className="min-w-0 flex-1 border-2 border-t-[#373737] border-l-[#373737] border-r-[#ffffff] border-b-[#ffffff] bg-[#8b8b8b] px-2 py-1 font-pixel text-[11px] text-[#1f1f1f] outline-none placeholder:text-[#5a5a5a]"
+              aria-label="anvil search text"
+            />
+            <McButton type="submit" disabled={pending || !online}>Search</McButton>
+          </form>
+        ) : null}
+
         {menu ? (
           <div
             className="mx-auto grid gap-[2px] p-3"
@@ -174,6 +194,9 @@ export function GuiOverlay ({ gui, open, onClose }: Props) {
             </McButton>
             <McButton disabled={pending || !menu} onClick={() => run({ action: "close" }, "closed menu")}>
               Close
+            </McButton>
+            <McButton disabled={pending || !online} onClick={() => run({ action: "command", command }, `sent ${command}`)}>
+              {menu ? "Reopen" : "Open"}
             </McButton>
             <form
               className="ml-auto flex items-center gap-1"

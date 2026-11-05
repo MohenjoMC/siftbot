@@ -294,6 +294,18 @@ export default function create (ctx) {
           break
         }
 
+        // Keep the bot still while a container/menu is open, otherwise it walks
+        // away from the container and the server closes the window.
+        if (bot.currentWindow) {
+          try {
+            bot.setControlState('forward', false)
+            bot.setControlState('sprint', false)
+            bot.setControlState('jump', false)
+          } catch {}
+          await sleep(250)
+          continue
+        }
+
         const current = bot.entity.position
         const dx = run.target.x - current.x
         const dz = run.target.z - current.z

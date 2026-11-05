@@ -132,7 +132,7 @@ export class SiftBot extends EventEmitter {
     session.auth = new AutoLogin(bot, config, logger, { credentials: this.credentials })
     session.autoEat = new AutoEat(bot, config.autoEat, logger)
     session.afk = new AfkController(bot, config.afk, logger, {
-      isBusy: () => session.autoEat.eating
+      isBusy: () => session.autoEat.eating || Boolean(bot.currentWindow)
     })
     session.sneak = new SneakKeeper(bot, config.sneak, logger)
 
